@@ -1,8 +1,9 @@
-from sqlalchemy import create_engine
+from app.db.base import Base
+from app.db.session import engine
 
-DATABASE_URL = "sqlite:///./luip.db"
+# Import models
+from app.models.user import User
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+
+def create_database():
+    Base.metadata.create_all(bind=engine)
