@@ -7,3 +7,8 @@ venv/
 .idea/
 .vscode/
 luip.db
+__pycache__/
+*.pyc
+.env
+
+storage/

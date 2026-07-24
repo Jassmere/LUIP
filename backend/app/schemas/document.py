@@ -8,6 +8,7 @@ class DocumentCreate(BaseModel):
     original_filename: str
     file_type: str
     file_path: str
+    file_size: int
     contract_id: int
 
 
@@ -17,9 +18,10 @@ class DocumentResponse(BaseModel):
     original_filename: str
     file_type: str
     file_path: str
-    uploaded_at: datetime
+    file_size: int
     contract_id: int
     uploaded_by: int
+    uploaded_at: datetime
 
     class Config:
         from_attributes = True

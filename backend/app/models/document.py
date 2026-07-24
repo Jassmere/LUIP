@@ -1,9 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
-from app.db.base import Base
+from app.database import Base
 
 
 class Document(Base):
@@ -11,34 +17,50 @@ class Document(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    filename = Column(String(255), nullable=False)
+    filename = Column(String, nullable=False)
+    original_filename = Column(String, nullable=False)
 
-    original_filename = Column(String(255), nullable=False)
+    file_type = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
 
-    file_type = Column(String(50), nullable=False)
+    file_size = Column(Integer, nullable=False)
 
-    file_path = Column(String(500), nullable=False)
+    checksum = Column(String, nullable=False)
 
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    version = Column(Integer, default=1)
 
     contract_id = Column(
         Integer,
         ForeignKey("contracts.id"),
-        nullable=False
+        nullable=False,
     )
 
     uploaded_by = Column(
         Integer,
         ForeignKey("users.id"),
-        nullable=False
+        nullable=False,
     )
 
-    contract = relationship(
-        "Contract",
-        back_populates="documents"
+    uploaded_at = Column(
+        DateTime,
+        default=datetime.utcnow,
     )
 
-    uploader = relationship(
-        "User",
-        back_populates="documents"
+    # -----------------------------
+    # AI Processing Fields
+    # -----------------------------
+
+    extracted_text = Column(
+        Text,
+        nullable=True,
+    )
+
+    processing_status = Column(
+        String,
+        default="Pending",
+    )
+
+    processed_at = Column(
+        DateTime,
+        nullable=True,
     )
