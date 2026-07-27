@@ -27,7 +27,7 @@ ALLOWED_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
-MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+MAX_FILE_SIZE = 25 * 1024 * 1024
 
 
 @router.post(
@@ -40,9 +40,6 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Upload a PDF or DOCX document.
-    """
 
     if file.content_type not in ALLOWED_TYPES:
         raise HTTPException(
@@ -62,14 +59,12 @@ async def upload_document(
             detail="Contract not found.",
         )
 
-    document = await DocumentService.create_document(
+    return await DocumentService.create_document(
         db=db,
         upload_file=file,
         contract_id=contract_id,
         uploaded_by=current_user.id,
     )
-
-    return document
 
 
 @router.get(
@@ -92,9 +87,10 @@ def get_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
     document = DocumentService.get_document(
-        db=db,
-        document_id=document_id,
+        db,
+        document_id,
     )
 
     if document is None:
@@ -114,13 +110,10 @@ def download_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Download the original uploaded document.
-    """
 
     document = DocumentService.get_document(
-        db=db,
-        document_id=document_id,
+        db,
+        document_id,
     )
 
     if document is None:
@@ -134,3 +127,60 @@ def download_document(
         filename=document.original_filename,
         media_type=document.file_type,
     )
+
+
+@router.get(
+    "/{document_id}/text",
+)
+def get_document_text(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    document = DocumentService.get_document(
+        db,
+        document_id,
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found.",
+        )
+
+    return {
+        "document_id": document.id,
+        "filename": document.original_filename,
+        "ai_status": document.ai_status,
+        "text_length": len(document.text_content or ""),
+        "text_content": document.text_content,
+    }
+
+
+@router.get(
+    "/{document_id}/summary",
+)
+def get_document_summary(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    document = DocumentService.get_document(
+        db,
+        document_id,
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found.",
+        )
+
+    return {
+        "document_id": document.id,
+        "filename": document.original_filename,
+        "ai_status": document.ai_status,
+        "summary": document.summary,
+    }

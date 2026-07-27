@@ -1,15 +1,15 @@
-from datetime import datetime
-
 from sqlalchemy import (
     Column,
-    DateTime,
-    ForeignKey,
     Integer,
     String,
+    DateTime,
+    ForeignKey,
     Text,
 )
 
-from app.database import Base
+from sqlalchemy.orm import relationship
+
+from app.db.base import Base
 
 
 class Document(Base):
@@ -18,16 +18,25 @@ class Document(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     filename = Column(String, nullable=False)
+
     original_filename = Column(String, nullable=False)
 
     file_type = Column(String, nullable=False)
+
     file_path = Column(String, nullable=False)
 
     file_size = Column(Integer, nullable=False)
 
-    checksum = Column(String, nullable=False)
+    checksum = Column(
+        String,
+        nullable=False,
+    )
 
-    version = Column(Integer, default=1)
+    version = Column(
+        Integer,
+        default=1,
+        nullable=False,
+    )
 
     contract_id = Column(
         Integer,
@@ -43,24 +52,50 @@ class Document(Base):
 
     uploaded_at = Column(
         DateTime,
-        default=datetime.utcnow,
+        nullable=False,
     )
 
-    # -----------------------------
-    # AI Processing Fields
-    # -----------------------------
+    #
+    # ------------------------------
+    # AI Document Intelligence
+    # ------------------------------
+    #
 
-    extracted_text = Column(
+    ai_status = Column(
+        String,
+        default="Pending",
+        nullable=False,
+    )
+
+    text_content = Column(
         Text,
         nullable=True,
     )
 
-    processing_status = Column(
-        String,
-        default="Pending",
+    summary = Column(
+        Text,
+        nullable=True,
     )
 
-    processed_at = Column(
+    processing_started_at = Column(
         DateTime,
         nullable=True,
+    )
+
+    processing_completed_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    #
+    # Relationships
+    #
+
+    contract = relationship(
+        "Contract",
+        back_populates="documents",
+    )
+
+    uploader = relationship(
+        "User",
     )
