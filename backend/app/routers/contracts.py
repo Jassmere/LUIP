@@ -68,3 +68,109 @@ def list_contracts(
     )
 
     return contracts
+
+
+@router.get("/{contract_id}")
+def get_contract(
+    contract_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    contract = (
+        db.query(Contract)
+        .filter(
+            Contract.id == contract_id,
+            Contract.created_by == current_user.id
+        )
+        .first()
+    )
+
+    if not contract:
+        raise HTTPException(
+            status_code=404,
+            detail="Contract not found"
+        )
+
+    return contract
+
+
+@router.put("/{contract_id}")
+def update_contract(
+    contract_id: int,
+    updated_contract: ContractCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    contract = (
+        db.query(Contract)
+        .filter(
+            Contract.id == contract_id,
+            Contract.created_by == current_user.id
+        )
+        .first()
+    )
+
+    if not contract:
+        raise HTTPException(
+            status_code=404,
+            detail="Contract not found"
+        )
+
+    organization = (
+        db.query(Organization)
+        .filter(
+            Organization.id == updated_contract.organization_id,
+            Organization.owner_id == current_user.id
+        )
+        .first()
+    )
+
+    if not organization:
+        raise HTTPException(
+            status_code=404,
+            detail="Organization not found"
+        )
+
+    contract.title = updated_contract.title
+    contract.contract_type = updated_contract.contract_type
+    contract.counterparty = updated_contract.counterparty
+    contract.effective_date = updated_contract.effective_date
+    contract.expiry_date = updated_contract.expiry_date
+    contract.organization_id = updated_contract.organization_id
+
+    db.commit()
+    db.refresh(contract)
+
+    return contract
+
+
+@router.delete("/{contract_id}")
+def delete_contract(
+    contract_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    contract = (
+        db.query(Contract)
+        .filter(
+            Contract.id == contract_id,
+            Contract.created_by == current_user.id
+        )
+        .first()
+    )
+
+    if not contract:
+        raise HTTPException(
+            status_code=404,
+            detail="Contract not found"
+        )
+
+    db.delete(contract)
+    db.commit()
+
+    return {
+        "message": "Contract deleted successfully"
+    }
