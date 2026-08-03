@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.clause import Clause
+from app.models.contract import Contract
 from app.models.document import Document
 from app.services.clause_extraction_service import ClauseExtractionService
 from app.services.document_ai_service import DocumentAIService
@@ -56,7 +57,9 @@ class DocumentService:
                 text_content
             )
 
-        except Exception:
+        except Exception as e:
+
+            print(f"Document AI processing failed: {e}")
 
             ai_status = "Failed"
 
@@ -153,11 +156,21 @@ class DocumentService:
     @staticmethod
     def list_documents(
         db: Session,
+        user_id: int,
     ):
 
         return (
             db.query(Document)
-            .order_by(Document.uploaded_at.desc())
+            .join(
+                Contract,
+                Document.contract_id == Contract.id,
+            )
+            .filter(
+                Contract.created_by == user_id
+            )
+            .order_by(
+                Document.uploaded_at.desc()
+            )
             .all()
         )
 
@@ -166,6 +179,10 @@ class DocumentService:
         db: Session,
         document: Document,
     ):
+
+        StorageService.delete_file(
+            document.file_path
+        )
 
         db.delete(document)
 

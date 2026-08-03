@@ -75,7 +75,10 @@ def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return DocumentService.list_documents(db)
+    return DocumentService.list_documents(
+        db=db,
+        user_id=current_user.id,
+    )
 
 
 @router.get(
@@ -183,4 +186,34 @@ def get_document_summary(
         "filename": document.original_filename,
         "ai_status": document.ai_status,
         "summary": document.summary,
+    }
+
+
+@router.delete(
+    "/{document_id}",
+)
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+
+    document = DocumentService.get_document(
+        db,
+        document_id,
+    )
+
+    if document is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found.",
+        )
+
+    DocumentService.delete_document(
+        db=db,
+        document=document,
+    )
+
+    return {
+        "message": "Document deleted successfully"
     }

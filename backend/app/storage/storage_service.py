@@ -47,3 +47,21 @@ class StorageService:
             len(file_bytes),
             checksum,
         )
+
+    @staticmethod
+    def delete_file(file_path: str) -> bool:
+        """
+        Deletes a stored file from disk.
+
+        Returns:
+            True if the file was deleted.
+            False if the file did not exist.
+        """
+
+        path = Path(file_path)
+
+        if path.exists():
+            path.unlink()
+            return True
+
+        return False
