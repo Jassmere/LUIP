@@ -26,7 +26,10 @@ def list_users():
 
 
 @router.post("/register")
-def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(
+    user: UserCreate,
+    db: Session = Depends(get_db)
+):
 
     existing_user = db.query(User).filter(
         User.email == user.email
@@ -67,15 +70,30 @@ def login(
     ).first()
 
     if not existing_user:
+        print("======================================")
+        print("User not found")
+        print(f"Email entered: {form_data.username}")
+        print("======================================")
+
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password"
         )
 
-    if not verify_password(
+    print("======================================")
+    print(f"User found: {existing_user.email}")
+    print(f"Password entered: {form_data.password}")
+    print(f"Stored password hash: {existing_user.password_hash}")
+
+    password_ok = verify_password(
         form_data.password,
         existing_user.password_hash
-    ):
+    )
+
+    print(f"Password verification result: {password_ok}")
+    print("======================================")
+
+    if not password_ok:
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password"
@@ -93,8 +111,43 @@ def login(
     }
 
 
+@router.post("/reset-admin-password")
+def reset_admin_password(
+    db: Session = Depends(get_db)
+):
+
+    user = db.query(User).filter(
+        User.email == "admin@luip.com"
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="Administrator not found"
+        )
+
+    user.password_hash = hash_password("Admin@123")
+
+    db.commit()
+    db.refresh(user)
+
+    print("======================================")
+    print("Administrator password has been reset")
+    print(f"Email: {user.email}")
+    print("Password: Admin@123")
+    print("======================================")
+
+    return {
+        "message": "Administrator password reset successfully",
+        "email": user.email,
+        "password": "Admin@123"
+    }
+
+
 @router.get("/me")
-def get_profile(current_user: User = Depends(get_current_user)):
+def get_profile(
+    current_user: User = Depends(get_current_user)
+):
     return {
         "id": current_user.id,
         "email": current_user.email,

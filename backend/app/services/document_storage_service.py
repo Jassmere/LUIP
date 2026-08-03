@@ -2,7 +2,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.clause import Clause
 from app.models.document import Document
+from app.services.clause_extraction_service import ClauseExtractionService
 from app.services.document_ai_service import DocumentAIService
 from app.services.text_extraction_service import TextExtractionService
 from app.storage.storage_service import StorageService
@@ -16,9 +18,9 @@ class DocumentService:
     - Store uploaded files
     - Extract document text
     - Generate AI summaries
+    - Extract legal clauses
+    - Save clause intelligence
     - Create database records
-    - Retrieve documents
-    - Delete documents
     """
 
     @staticmethod
@@ -99,6 +101,40 @@ class DocumentService:
         db.commit()
 
         db.refresh(document)
+
+        #
+        # ------------------------------------
+        # Extract and Save Clauses
+        # ------------------------------------
+        #
+
+        clauses = ClauseExtractionService.extract(
+            text_content
+        )
+
+        for clause_data in clauses:
+
+            clause = Clause(
+
+                document_id=document.id,
+
+                clause_type=clause_data["clause_type"],
+
+                heading=clause_data["heading"],
+
+                content=clause_data["content"],
+
+                confidence_score=clause_data["confidence_score"],
+
+                page_number=None,
+
+                created_at=datetime.utcnow(),
+
+            )
+
+            db.add(clause)
+
+        db.commit()
 
         return document
 

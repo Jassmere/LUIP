@@ -15,17 +15,36 @@ from app.db.base import Base
 class Document(Base):
     __tablename__ = "documents"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(
+        Integer,
+        primary_key=True,
+        index=True,
+    )
 
-    filename = Column(String, nullable=False)
+    filename = Column(
+        String,
+        nullable=False,
+    )
 
-    original_filename = Column(String, nullable=False)
+    original_filename = Column(
+        String,
+        nullable=False,
+    )
 
-    file_type = Column(String, nullable=False)
+    file_type = Column(
+        String,
+        nullable=False,
+    )
 
-    file_path = Column(String, nullable=False)
+    file_path = Column(
+        String,
+        nullable=False,
+    )
 
-    file_size = Column(Integer, nullable=False)
+    file_size = Column(
+        Integer,
+        nullable=False,
+    )
 
     checksum = Column(
         String,
@@ -55,12 +74,6 @@ class Document(Base):
         nullable=False,
     )
 
-    #
-    # ------------------------------
-    # AI Document Intelligence
-    # ------------------------------
-    #
-
     ai_status = Column(
         String,
         default="Pending",
@@ -87,10 +100,6 @@ class Document(Base):
         nullable=True,
     )
 
-    #
-    # Relationships
-    #
-
     contract = relationship(
         "Contract",
         back_populates="documents",
@@ -98,4 +107,11 @@ class Document(Base):
 
     uploader = relationship(
         "User",
+        back_populates="documents",
+    )
+
+    clauses = relationship(
+        "Clause",
+        back_populates="document",
+        cascade="all, delete-orphan",
     )
