@@ -8,7 +8,6 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
-    Boolean,
 )
 
 from sqlalchemy.orm import relationship
@@ -52,6 +51,10 @@ class Clause(Base):
         default=100.0,
     )
 
+    # -----------------------------
+    # AI Risk Intelligence
+    # -----------------------------
+
     risk_level = Column(
         String(20),
         nullable=False,
@@ -59,27 +62,17 @@ class Clause(Base):
     )
 
     risk_score = Column(
-        Float,
+        Integer,
         nullable=False,
-        default=0.0,
+        default=0,
     )
 
-    review_status = Column(
-        String(30),
-        nullable=False,
-        default="Pending",
-    )
-
-    ai_recommendation = Column(
+    recommendation = Column(
         Text,
         nullable=True,
     )
 
-    is_missing_clause = Column(
-        Boolean,
-        nullable=False,
-        default=False,
-    )
+    # -----------------------------
 
     page_number = Column(
         Integer,

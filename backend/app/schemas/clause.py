@@ -17,6 +17,12 @@ class ClauseResponse(BaseModel):
 
     confidence_score: float
 
+    risk_level: str
+
+    risk_score: int
+
+    recommendation: str | None = None
+
     page_number: int | None = None
 
     created_at: datetime

@@ -3,11 +3,21 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.clause import Clause
-from app.models.contract import Contract
 from app.models.document import Document
-from app.services.clause_extraction_service import ClauseExtractionService
-from app.services.document_ai_service import DocumentAIService
-from app.services.text_extraction_service import TextExtractionService
+
+from app.services.clause_extraction_service import (
+    ClauseExtractionService,
+)
+from app.services.document_ai_service import (
+    DocumentAIService,
+)
+from app.services.text_extraction_service import (
+    TextExtractionService,
+)
+from app.services.risk_analysis_service import (
+    RiskAnalysisService,
+)
+
 from app.storage.storage_service import StorageService
 
 
@@ -15,13 +25,14 @@ class DocumentService:
     """
     Handles all document business logic.
 
-    Responsibilities:
-    - Store uploaded files
-    - Extract document text
-    - Generate AI summaries
-    - Extract legal clauses
-    - Save clause intelligence
-    - Create database records
+    Responsibilities
+
+    • Store uploaded files
+    • Extract document text
+    • Generate AI summaries
+    • Extract clauses
+    • Calculate legal risk
+    • Save clause intelligence
     """
 
     @staticmethod
@@ -37,7 +48,9 @@ class DocumentService:
             file_path,
             file_size,
             checksum,
-        ) = await StorageService.save_file(upload_file)
+        ) = await StorageService.save_file(
+            upload_file
+        )
 
         ai_status = "Completed"
 
@@ -49,17 +62,19 @@ class DocumentService:
 
         try:
 
-            text_content = TextExtractionService.extract_text(
-                file_path
+            text_content = (
+                TextExtractionService.extract_text(
+                    file_path
+                )
             )
 
-            summary = DocumentAIService.generate_summary(
-                text_content
+            summary = (
+                DocumentAIService.generate_summary(
+                    text_content
+                )
             )
 
-        except Exception as e:
-
-            print(f"Document AI processing failed: {e}")
+        except Exception:
 
             ai_status = "Failed"
 
@@ -107,7 +122,7 @@ class DocumentService:
 
         #
         # ------------------------------------
-        # Extract and Save Clauses
+        # Clause Intelligence
         # ------------------------------------
         #
 
@@ -116,6 +131,10 @@ class DocumentService:
         )
 
         for clause_data in clauses:
+
+            risk = RiskAnalysisService.analyze(
+                clause_data["clause_type"]
+            )
 
             clause = Clause(
 
@@ -127,7 +146,17 @@ class DocumentService:
 
                 content=clause_data["content"],
 
-                confidence_score=clause_data["confidence_score"],
+                confidence_score=clause_data[
+                    "confidence_score"
+                ],
+
+                risk_level=risk["risk_level"],
+
+                risk_score=risk["risk_score"],
+
+                recommendation=risk[
+                    "recommendation"
+                ],
 
                 page_number=None,
 
@@ -149,25 +178,19 @@ class DocumentService:
 
         return (
             db.query(Document)
-            .filter(Document.id == document_id)
+            .filter(
+                Document.id == document_id
+            )
             .first()
         )
 
     @staticmethod
     def list_documents(
         db: Session,
-        user_id: int,
     ):
 
         return (
             db.query(Document)
-            .join(
-                Contract,
-                Document.contract_id == Contract.id,
-            )
-            .filter(
-                Contract.created_by == user_id
-            )
             .order_by(
                 Document.uploaded_at.desc()
             )
@@ -179,10 +202,6 @@ class DocumentService:
         db: Session,
         document: Document,
     ):
-
-        StorageService.delete_file(
-            document.file_path
-        )
 
         db.delete(document)
 
