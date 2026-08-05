@@ -8,11 +8,13 @@ from app.routers.organizations import router as organizations_router
 from app.routers.contracts import router as contracts_router
 from app.routers.documents import router as documents_router
 from app.routers.clauses import router as clauses_router
+from app.routers.vega import router as vega_router
 
 
 app = FastAPI(
     title="LUIP API",
     version="1.0.0",
+    description="Lawyered Up Intelligence Platform (LUIP)"
 )
 
 
@@ -21,6 +23,10 @@ def startup():
 
     create_database()
 
+
+# ------------------------------------------
+# Register API Routers
+# ------------------------------------------
 
 app.include_router(health_router)
 
@@ -33,3 +39,5 @@ app.include_router(contracts_router)
 app.include_router(documents_router)
 
 app.include_router(clauses_router)
+
+app.include_router(vega_router)
