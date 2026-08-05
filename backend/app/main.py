@@ -2,6 +2,10 @@ from fastapi import FastAPI
 
 from app.database import create_database
 
+# -----------------------------
+# Routers
+# -----------------------------
+
 from app.routers.health import router as health_router
 from app.routers.users import router as users_router
 from app.routers.organizations import router as organizations_router
@@ -10,23 +14,38 @@ from app.routers.documents import router as documents_router
 from app.routers.clauses import router as clauses_router
 from app.routers.vega import router as vega_router
 
+# Diagnostics
+from app.routers.diagnostics import router as diagnostics_router
+
 
 app = FastAPI(
-    title="LUIP API",
-    version="1.0.0",
-    description="Lawyered Up Intelligence Platform (LUIP)"
+    title="Lawyered Up Intelligence Platform (LUIP)",
+    version="1.0.9",
+    description="Enterprise AI Contract Lifecycle Management Platform",
 )
 
+
+# --------------------------------------------------
+# Startup
+# --------------------------------------------------
 
 @app.on_event("startup")
 def startup():
 
     create_database()
 
+    print("")
+    print("==============================================")
+    print(" LUIP Enterprise Platform")
+    print(" Version : 1.0.9")
+    print(" Diagnostics Engine Loaded")
+    print("==============================================")
+    print("")
 
-# ------------------------------------------
-# Register API Routers
-# ------------------------------------------
+
+# --------------------------------------------------
+# API Routers
+# --------------------------------------------------
 
 app.include_router(health_router)
 
@@ -41,3 +60,5 @@ app.include_router(documents_router)
 app.include_router(clauses_router)
 
 app.include_router(vega_router)
+
+app.include_router(diagnostics_router)

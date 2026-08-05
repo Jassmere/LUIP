@@ -30,13 +30,17 @@ class Clause(Base):
         nullable=False,
     )
 
+    # ---------------------------------
+    # AI Classification
+    # ---------------------------------
+
     clause_type = Column(
-        String(100),
+        Text,
         nullable=False,
     )
 
     heading = Column(
-        String(255),
+        Text,
         nullable=False,
     )
 
@@ -51,9 +55,9 @@ class Clause(Base):
         default=100.0,
     )
 
-    # -----------------------------
-    # AI Risk Intelligence
-    # -----------------------------
+    # ---------------------------------
+    # Vega AI Risk Intelligence
+    # ---------------------------------
 
     risk_level = Column(
         String(20),
@@ -72,7 +76,7 @@ class Clause(Base):
         nullable=True,
     )
 
-    # -----------------------------
+    # ---------------------------------
 
     page_number = Column(
         Integer,

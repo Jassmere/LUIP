@@ -3,56 +3,115 @@ import re
 
 class ClauseExtractionService:
     """
-    Basic clause extraction engine.
+    LUIP Clause Extraction Engine V2
 
-    This is Version 1.
-
-    Future versions will use AI and NLP.
-
-    Current version detects common legal headings.
+    Detects:
+    - Numbered headings (1. Heading)
+    - Roman numeral headings (I. Heading)
+    - SECTION headings
+    - ARTICLE headings
+    - Common legal clause names
     """
 
-    CLAUSE_PATTERNS = [
+    CLAUSE_KEYWORDS = [
 
         "Definitions",
-
         "Term",
-
         "Termination",
-
         "Confidentiality",
-
+        "Confidential Information",
         "Payment",
-
         "Fees",
-
         "Liability",
-
+        "Limitation of Liability",
         "Indemnity",
-
         "Warranty",
-
         "Force Majeure",
-
         "Dispute Resolution",
-
+        "Arbitration",
         "Jurisdiction",
-
         "Intellectual Property",
-
         "Data Protection",
-
         "Privacy",
-
         "Governing Law",
-
         "Assignment",
-
         "Entire Agreement",
-
         "Notice",
+        "Notices",
+        "Relationship Of Parties",
+        "No License",
+        "Execution",
+        "Signatures",
+        "Conflicts",
+        "Injunctive Relief",
+        "Provisions Separable"
 
     ]
+
+    @staticmethod
+    def is_heading(line: str) -> bool:
+
+        line = line.strip()
+
+        if not line:
+            return False
+
+        # SECTION 5
+
+        if re.match(r"^SECTION\s+\d+", line, re.IGNORECASE):
+            return True
+
+        # ARTICLE III
+
+        if re.match(r"^ARTICLE\s+[IVXLCDM]+", line, re.IGNORECASE):
+            return True
+
+        # 1. Heading
+
+        if re.match(r"^\d+\.\s*", line):
+            return True
+
+        # 10. Heading
+
+        if re.match(r"^\d+\s*\.", line):
+            return True
+
+        # I. Heading
+
+        if re.match(r"^[IVXLCDM]+\.", line):
+            return True
+
+        # A. Heading
+
+        if re.match(r"^[A-Z]\.", line):
+            return True
+
+        # Common legal headings
+
+        for keyword in ClauseExtractionService.CLAUSE_KEYWORDS:
+
+            if keyword.lower() in line.lower():
+                return True
+
+        return False
+
+    @staticmethod
+    def clean_heading(line: str) -> str:
+        """
+        Removes numbering from headings.
+
+        Example:
+
+        1. Term of Agreement
+            ->
+        Term of Agreement
+        """
+
+        line = re.sub(r"^\d+\.\s*", "", line)
+        line = re.sub(r"^[IVXLCDM]+\.\s*", "", line, flags=re.IGNORECASE)
+        line = re.sub(r"^[A-Z]\.\s*", "", line)
+
+        return line.strip()
 
     @staticmethod
     def extract(text: str):
@@ -65,44 +124,36 @@ class ClauseExtractionService:
 
         lines = text.splitlines()
 
-        for line in lines:
+        for raw_line in lines:
 
-            clean = line.strip()
+            line = raw_line.strip()
 
-            if not clean:
+            if not line:
                 continue
 
-            matched = False
+            if ClauseExtractionService.is_heading(line):
 
-            for pattern in ClauseExtractionService.CLAUSE_PATTERNS:
+                if current_content:
 
-                if re.fullmatch(pattern, clean, re.IGNORECASE):
+                    clauses.append({
 
-                    if current_content:
+                        "heading": current_heading,
 
-                        clauses.append({
+                        "content": "\n".join(current_content),
 
-                            "heading": current_heading,
+                        "clause_type": current_heading,
 
-                            "content": "\n".join(current_content),
+                        "confidence_score": 95
 
-                            "clause_type": current_heading,
+                    })
 
-                            "confidence_score": 100,
+                current_heading = ClauseExtractionService.clean_heading(line)
 
-                        })
+                current_content = []
 
-                    current_heading = clean
+            else:
 
-                    current_content = []
-
-                    matched = True
-
-                    break
-
-            if not matched:
-
-                current_content.append(clean)
+                current_content.append(line)
 
         if current_content:
 
@@ -114,7 +165,7 @@ class ClauseExtractionService:
 
                 "clause_type": current_heading,
 
-                "confidence_score": 100,
+                "confidence_score": 95
 
             })
 
