@@ -5,6 +5,24 @@ class DiagnosticsEngine:
 
     VERSION = "1.0.9"
 
+    _startup_time = datetime.utcnow()
+
+    @staticmethod
+    def startup():
+        """
+        Called once when LUIP starts.
+        """
+
+        DiagnosticsEngine._startup_time = datetime.utcnow()
+
+        print()
+        print("==============================================")
+        print(" LUIP Enterprise Platform")
+        print(f" Version : {DiagnosticsEngine.VERSION}")
+        print(" Diagnostics Engine Loaded")
+        print("==============================================")
+        print()
+
     @staticmethod
     def system_status():
 
@@ -12,7 +30,7 @@ class DiagnosticsEngine:
             "platform": "LUIP",
             "diagnostics_version": DiagnosticsEngine.VERSION,
             "status": "Healthy",
-            "started": datetime.utcnow().isoformat(),
+            "started": DiagnosticsEngine._startup_time.isoformat(),
             "database": "Unknown",
             "storage": "Unknown",
             "api": "Unknown",
