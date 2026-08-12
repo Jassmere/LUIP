@@ -12,11 +12,17 @@ class NextBestActionService:
     Converts a company's buying-intent score
     into an actionable sales recommendation.
 
-    v1.1.0
+    Version: 1.1.0
     """
+
+    VERSION = "1.1.0"
 
     @staticmethod
     def get_action(score: float):
+        """
+        Convert buying-intent score into
+        a recommended sales action.
+        """
 
         score = float(score or 0)
 
@@ -65,9 +71,18 @@ class NextBestActionService:
         }
 
     @staticmethod
-    def generate(company_name: str, score: float):
+    def generate(
+        company_name: str,
+        score: float,
+    ):
+        """
+        Generate an in-memory Next Best Action
+        recommendation.
+        """
 
-        recommendation = NextBestActionService.get_action(score)
+        recommendation = (
+            NextBestActionService.get_action(score)
+        )
 
         return {
             "company": company_name,
@@ -90,7 +105,9 @@ class NextBestActionService:
         Existing completed actions are preserved.
         """
 
-        recommendation = NextBestActionService.get_action(score)
+        recommendation = (
+            NextBestActionService.get_action(score)
+        )
 
         existing = (
             db.query(NextBestAction)
@@ -106,12 +123,24 @@ class NextBestActionService:
 
         if existing:
 
-            existing.action_type = recommendation["action"]
-            existing.priority = recommendation["priority"]
-            existing.recommended_within_hours = (
-                recommendation["recommended_within_hours"]
+            existing.action_type = (
+                recommendation["action"]
             )
-            existing.explanation = recommendation["reason"]
+
+            existing.priority = (
+                recommendation["priority"]
+            )
+
+            existing.recommended_within_hours = (
+                recommendation[
+                    "recommended_within_hours"
+                ]
+            )
+
+            existing.explanation = (
+                recommendation["reason"]
+            )
+
             existing.ai_reasoning = ai_reasoning
 
             db.commit()
@@ -124,7 +153,9 @@ class NextBestActionService:
             action_type=recommendation["action"],
             priority=recommendation["priority"],
             recommended_within_hours=(
-                recommendation["recommended_within_hours"]
+                recommendation[
+                    "recommended_within_hours"
+                ]
             ),
             explanation=recommendation["reason"],
             ai_reasoning=ai_reasoning,
