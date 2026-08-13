@@ -7,6 +7,7 @@ from sqlalchemy import (
     String,
     DateTime,
     ForeignKey,
+    UniqueConstraint,
 )
 
 from sqlalchemy.orm import relationship
@@ -26,9 +27,7 @@ class CompanyScore(Base):
     company_id = Column(
         Integer,
         ForeignKey("companies.id"),
-        unique=True,
         nullable=False,
-        index=True,
     )
 
     buying_intent_score = Column(
@@ -59,4 +58,11 @@ class CompanyScore(Base):
     company = relationship(
         "Company",
         back_populates="company_score",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id",
+            name="company_scores_company_id_key",
+        ),
     )

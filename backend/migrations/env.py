@@ -8,27 +8,49 @@ from alembic import context
 from app.config import settings
 from app.db.base import Base
 
-# Import ALL models so Alembic can detect them
-
+# Import ALL LUIP models so Alembic can detect the complete schema.
 from app.models.user import User
 from app.models.organization import Organization
 from app.models.contract import Contract
 from app.models.document import Document
+from app.models.company import Company
+from app.models.decision_maker import DecisionMaker
+from app.models.buying_intent_signal import BuyingIntentSignal
+from app.models.buying_activity import BuyingActivity
+from app.models.company_score import CompanyScore
+from app.models.next_best_action import NextBestAction
+from app.models.outreach_campaign import OutreachCampaign
+from app.models.email_queue import EmailQueue
+from app.models.clause import Clause
+
 
 config = context.config
 
+
+# Use the application's configured database URL.
 config.set_main_option(
     "sqlalchemy.url",
     settings.DATABASE_URL,
 )
 
+
+# Interpret the Alembic configuration file.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+
+# SQLAlchemy metadata containing all imported LUIP models.
 target_metadata = Base.metadata
 
 
 def run_migrations_offline():
+    """
+    Run migrations in offline mode.
+
+    This configures Alembic with the database URL without
+    creating a live database connection.
+    """
+
     url = config.get_main_option("sqlalchemy.url")
 
     context.configure(
@@ -43,6 +65,9 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    """
+    Run migrations in online mode using a live database connection.
+    """
 
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
@@ -63,9 +88,6 @@ def run_migrations_online():
 
 
 if context.is_offline_mode():
-
     run_migrations_offline()
-
 else:
-
     run_migrations_online()

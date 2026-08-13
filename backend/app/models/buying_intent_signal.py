@@ -16,6 +16,14 @@ from app.db.base import Base
 
 
 class BuyingIntentSignal(Base):
+    """
+    LUIP Buying Intent Signal.
+
+    Stores a detected buying-intent signal together with
+    its original LUIP scoring information and, where a
+    verified taxonomy rule exists, its LBIT classification.
+    """
+
     __tablename__ = "buying_intent_signals"
 
     id = Column(
@@ -56,6 +64,10 @@ class BuyingIntentSignal(Base):
         nullable=True,
     )
 
+    # ---------------------------------------------------------
+    # LUIP BUYING-INTENT SCORING
+    # ---------------------------------------------------------
+
     score = Column(
         Float,
         default=0,
@@ -66,10 +78,43 @@ class BuyingIntentSignal(Base):
         default=100,
     )
 
+    # ---------------------------------------------------------
+    # LBIT CLASSIFICATION
+    # ---------------------------------------------------------
+
+    lbit_level = Column(
+        Integer,
+        nullable=True,
+        index=True,
+    )
+
+    lbit_category = Column(
+        String(150),
+        nullable=True,
+    )
+
+    lbit_score = Column(
+        Float,
+        nullable=True,
+    )
+
+    lbit_confidence = Column(
+        Float,
+        nullable=True,
+    )
+
+    # ---------------------------------------------------------
+    # DETECTION TIMESTAMP
+    # ---------------------------------------------------------
+
     detected_at = Column(
         DateTime,
         default=datetime.utcnow,
     )
+
+    # ---------------------------------------------------------
+    # COMPANY RELATIONSHIP
+    # ---------------------------------------------------------
 
     company = relationship(
         "Company",

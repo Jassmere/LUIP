@@ -8,6 +8,7 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
+    Index,
 )
 
 from sqlalchemy.orm import relationship
@@ -92,4 +93,11 @@ class Clause(Base):
     document = relationship(
         "Document",
         back_populates="clauses",
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_clauses_document",
+            "document_id",
+        ),
     )
