@@ -27,11 +27,169 @@ class BuyingSignalService:
        definition exists
     4. Company-level buying-intent scoring
     5. Next Best Action recommendations
+    6. Explainable AI reasoning
 
     Version: 1.3.0
     """
 
     VERSION = "1.3.0"
+
+    # =====================================================
+    # EXPLAINABLE REASONING
+    # =====================================================
+
+    @staticmethod
+    def _build_ai_reasoning(
+        company_name: str,
+        signal_name: str,
+        signal_category: str,
+        score: float,
+        confidence: float,
+        evidence: str | None,
+        lbit_classification=None,
+        company_score=None,
+        next_best_action=None,
+    ) -> str:
+        """
+        Build deterministic explainable reasoning for a
+        Next Best Action.
+
+        This is LUIP Explainable Reasoning v1.
+
+        It deliberately does not call an external AI model.
+        The output is deterministic and auditable.
+
+        A future AI/LLM layer can replace or enrich this
+        reasoning without changing the underlying signal,
+        LBIT, scoring, or Next Best Action pipeline.
+        """
+
+        reasoning_parts = []
+
+        # -------------------------------------------------
+        # COMPANY
+        # -------------------------------------------------
+
+        reasoning_parts.append(
+            f"Company '{company_name}' generated a buying-intent "
+            f"signal of '{signal_name}'."
+        )
+
+        # -------------------------------------------------
+        # SIGNAL CATEGORY
+        # -------------------------------------------------
+
+        reasoning_parts.append(
+            f"The signal belongs to the '{signal_category}' "
+            f"category and carries a score of "
+            f"{float(score):.1f}/100 with "
+            f"{float(confidence):.1f}% confidence."
+        )
+
+        # -------------------------------------------------
+        # EVIDENCE
+        # -------------------------------------------------
+
+        if evidence:
+            reasoning_parts.append(
+                f"Supporting evidence: {evidence}"
+            )
+
+        # -------------------------------------------------
+        # LBIT
+        # -------------------------------------------------
+
+        if lbit_classification is not None:
+            reasoning_parts.append(
+                f"LBIT classified this signal as Level "
+                f"{lbit_classification.level} "
+                f"('{lbit_classification.category}') "
+                f"with a classification score of "
+                f"{float(lbit_classification.score):.1f} "
+                f"and confidence of "
+                f"{float(lbit_classification.confidence):.1f}%."
+            )
+
+        else:
+            reasoning_parts.append(
+                "The signal does not currently have an "
+                "established LBIT taxonomy classification."
+            )
+
+        # -------------------------------------------------
+        # COMPANY-LEVEL SCORE
+        # -------------------------------------------------
+
+        if company_score is not None:
+            company_buying_score = (
+                company_score.buying_intent_score
+            )
+
+            company_confidence = (
+                company_score.confidence
+            )
+
+            reasoning_parts.append(
+                f"The resulting company-level buying-intent "
+                f"score is {float(company_buying_score):.1f}/100 "
+                f"with {float(company_confidence):.1f}% confidence."
+            )
+
+        # -------------------------------------------------
+        # NEXT BEST ACTION
+        # -------------------------------------------------
+
+        if next_best_action is not None:
+
+            action_type = (
+                next_best_action.action_type
+            )
+
+            priority = (
+                next_best_action.priority
+            )
+
+            recommended_hours = (
+                next_best_action.recommended_within_hours
+            )
+
+            reasoning_parts.append(
+                f"Based on the available buying-intent "
+                f"evidence, LUIP recommends '{action_type}' "
+                f"with '{priority}' priority."
+            )
+
+            if recommended_hours == 1:
+                reasoning_parts.append(
+                    "The recommended response window is "
+                    "within 1 hour because the opportunity "
+                    "indicates immediate buying intent."
+                )
+
+            elif recommended_hours < 24:
+                reasoning_parts.append(
+                    f"The recommended response window is "
+                    f"within {recommended_hours} hours because "
+                    f"the opportunity requires prompt follow-up."
+                )
+
+            elif recommended_hours < 168:
+                reasoning_parts.append(
+                    f"The recommended response window is "
+                    f"within {recommended_hours} hours."
+                )
+
+            else:
+                reasoning_parts.append(
+                    "No immediate sales response is required; "
+                    "continued monitoring is recommended."
+                )
+
+        # -------------------------------------------------
+        # FINAL REASONING
+        # -------------------------------------------------
+
+        return " ".join(reasoning_parts)
 
     # =====================================================
     # CREATE BUYING SIGNAL
@@ -66,6 +224,8 @@ class BuyingSignalService:
             Company Buying-Intent Score
                 ↓
             Next Best Action
+                ↓
+            Explainable Reasoning
 
         Signals without an established LBIT taxonomy
         definition remain valid LUIP signals but are
@@ -135,7 +295,10 @@ class BuyingSignalService:
         # CLAMP SCORE
         # -------------------------------------------------
 
-        score = max(0.0, min(100.0, score))
+        score = max(
+            0.0,
+            min(100.0, score),
+        )
 
         # -------------------------------------------------
         # CLAMP CONFIDENCE
@@ -355,6 +518,56 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
+        # BUILD EXPLAINABLE REASONING
+        # -------------------------------------------------
+
+        ai_reasoning = (
+            BuyingSignalService._build_ai_reasoning(
+                company_name=company.name,
+                signal_name=signal.signal_name,
+                signal_category=signal.signal_category,
+                score=score,
+                confidence=confidence,
+                evidence=evidence,
+                lbit_classification=lbit_classification,
+                company_score=company_score,
+                next_best_action=next_best_action,
+            )
+        )
+
+        # -------------------------------------------------
+        # SAVE EXPLAINABLE REASONING
+        # -------------------------------------------------
+
+        try:
+
+            next_best_action.ai_reasoning = (
+                ai_reasoning
+            )
+
+            db.commit()
+            db.refresh(next_best_action)
+
+        except Exception as exc:
+
+            db.rollback()
+
+            return {
+                "success": False,
+                "error": (
+                    "Next Best Action was created, "
+                    "but explainable reasoning could not "
+                    "be saved."
+                ),
+                "detail": str(exc),
+                "signal_id": signal.id,
+                "activity_id": activity.id,
+                "next_best_action_id": (
+                    next_best_action.id
+                ),
+            }
+
+        # -------------------------------------------------
         # BUILD LBIT RESULT
         # -------------------------------------------------
 
@@ -386,8 +599,8 @@ class BuyingSignalService:
         # 1. Nested modern LUIP structures
         # 2. Flat backward-compatible fields
         #
-        # This keeps the current router tests and
-        # downstream LUIP integrations compatible.
+        # This keeps current routers and downstream
+        # LUIP integrations compatible.
         # -------------------------------------------------
 
         return {

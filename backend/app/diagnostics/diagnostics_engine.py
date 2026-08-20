@@ -1,11 +1,11 @@
-from datetime import datetime
+from datetime import datetime, UTC
 
 
 class DiagnosticsEngine:
 
     VERSION = "1.0.9"
 
-    _startup_time = datetime.utcnow()
+    _startup_time = datetime.now(UTC)
 
     @staticmethod
     def startup():
@@ -13,7 +13,7 @@ class DiagnosticsEngine:
         Called once when LUIP starts.
         """
 
-        DiagnosticsEngine._startup_time = datetime.utcnow()
+        DiagnosticsEngine._startup_time = datetime.now(UTC)
 
         print()
         print("==============================================")
@@ -37,7 +37,7 @@ class DiagnosticsEngine:
             "ai": "Unknown",
             "performance": "Unknown",
             "warnings": [],
-            "errors": []
+            "errors": [],
         }
 
     @staticmethod
