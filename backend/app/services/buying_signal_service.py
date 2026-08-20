@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 
 from sqlalchemy.orm import Session
 
@@ -28,13 +28,14 @@ class BuyingSignalService:
     4. Company-level buying-intent scoring
     5. Next Best Action recommendations
 
-    BuyingActivity records are consumed by the
-    LUIP Buying Intelligence scoring pipeline.
-
     Version: 1.3.0
     """
 
     VERSION = "1.3.0"
+
+    # =====================================================
+    # CREATE BUYING SIGNAL
+    # =====================================================
 
     @staticmethod
     def create_signal(
@@ -54,25 +55,99 @@ class BuyingSignalService:
 
         Processing pipeline:
 
-        Signal
-            ↓
-        LBIT Classification
-            ↓
-        BuyingIntentSignal
-            ↓
-        BuyingActivity
-            ↓
-        Company Buying-Intent Score
-            ↓
-        Next Best Action
+            Signal
+                ↓
+            LBIT Classification
+                ↓
+            BuyingIntentSignal
+                ↓
+            BuyingActivity
+                ↓
+            Company Buying-Intent Score
+                ↓
+            Next Best Action
 
-        Signals that do not yet have an established LBIT
-        taxonomy definition remain valid LUIP signals but
-        are stored without an LBIT classification.
+        Signals without an established LBIT taxonomy
+        definition remain valid LUIP signals but are
+        stored without an LBIT classification.
         """
 
         # -------------------------------------------------
-        # Validate company
+        # VALIDATE REQUIRED TEXT FIELDS
+        # -------------------------------------------------
+
+        if not signal_name or not signal_name.strip():
+            return {
+                "success": False,
+                "error": "signal_name is required",
+            }
+
+        if not signal_category or not signal_category.strip():
+            return {
+                "success": False,
+                "error": "signal_category is required",
+            }
+
+        # -------------------------------------------------
+        # NORMALIZE TEXT VALUES
+        # -------------------------------------------------
+
+        signal_name = signal_name.strip()
+        signal_category = signal_category.strip()
+
+        source = (
+            source.strip()
+            if source and source.strip()
+            else None
+        )
+
+        source_url = (
+            source_url.strip()
+            if source_url and source_url.strip()
+            else None
+        )
+
+        evidence = (
+            evidence.strip()
+            if evidence and evidence.strip()
+            else None
+        )
+
+        # -------------------------------------------------
+        # NORMALIZE SCORE
+        # -------------------------------------------------
+
+        try:
+            score = float(score)
+        except (TypeError, ValueError):
+            score = 0.0
+
+        # -------------------------------------------------
+        # NORMALIZE CONFIDENCE
+        # -------------------------------------------------
+
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            confidence = 100.0
+
+        # -------------------------------------------------
+        # CLAMP SCORE
+        # -------------------------------------------------
+
+        score = max(0.0, min(100.0, score))
+
+        # -------------------------------------------------
+        # CLAMP CONFIDENCE
+        # -------------------------------------------------
+
+        confidence = max(
+            0.0,
+            min(100.0, confidence),
+        )
+
+        # -------------------------------------------------
+        # VALIDATE COMPANY
         # -------------------------------------------------
 
         company = (
@@ -88,118 +163,28 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
-        # Validate required fields
-        # -------------------------------------------------
-
-        if not signal_name or not signal_name.strip():
-            return {
-                "success": False,
-                "error": "signal_name is required",
-            }
-
-        if (
-            not signal_category
-            or not signal_category.strip()
-        ):
-            return {
-                "success": False,
-                "error": "signal_category is required",
-            }
-
-        # -------------------------------------------------
-        # Normalize text values
-        # -------------------------------------------------
-
-        signal_name = signal_name.strip()
-
-        signal_category = signal_category.strip()
-
-        source = (
-            source.strip()
-            if source
-            else None
-        )
-
-        source_url = (
-            source_url.strip()
-            if source_url
-            else None
-        )
-
-        evidence = (
-            evidence.strip()
-            if evidence
-            else None
-        )
-
-        # -------------------------------------------------
-        # Normalize score
-        # -------------------------------------------------
-
-        try:
-            score = float(score)
-
-        except (TypeError, ValueError):
-            score = 0.0
-
-        # -------------------------------------------------
-        # Normalize confidence
-        # -------------------------------------------------
-
-        try:
-            confidence = float(confidence)
-
-        except (TypeError, ValueError):
-            confidence = 100.0
-
-        # -------------------------------------------------
-        # Keep values within sensible ranges
-        # -------------------------------------------------
-
-        if score < 0:
-            score = 0.0
-
-        if score > 100:
-            score = 100.0
-
-        if confidence < 0:
-            confidence = 0.0
-
-        if confidence > 100:
-            confidence = 100.0
-
-        # -------------------------------------------------
         # LBIT CLASSIFICATION
         # -------------------------------------------------
 
         lbit_classification = None
 
         try:
-            lbit_classification = (
-                LBITService.classify(
-                    signal_name=signal_name,
-                    score=score,
-                    confidence=confidence,
-                )
+            lbit_classification = LBITService.classify(
+                signal_name=signal_name,
+                score=score,
+                confidence=confidence,
             )
 
         except ValueError:
-            # -------------------------------------------------
-            # IMPORTANT:
-            #
-            # An unclassified LBIT signal is NOT rejected.
-            #
-            # LUIP can continue storing and scoring the
-            # buying signal while LBIT remains unclassified.
-            # -------------------------------------------------
-
+            # An unclassified signal remains a valid LUIP
+            # buying signal.
             lbit_classification = None
 
         # -------------------------------------------------
-        # Create Buying Intent Signal
+        # CREATE BUYING INTENT SIGNAL
         # -------------------------------------------------
 
-        detected_at = datetime.utcnow()
+        detected_at = datetime.now(UTC)
 
         signal = BuyingIntentSignal(
             company_id=company_id,
@@ -214,7 +199,7 @@ class BuyingSignalService:
         )
 
         # -------------------------------------------------
-        # Add LBIT classification where available
+        # ADD LBIT CLASSIFICATION
         # -------------------------------------------------
 
         if lbit_classification is not None:
@@ -238,13 +223,13 @@ class BuyingSignalService:
         db.add(signal)
 
         # -------------------------------------------------
-        # Flush so SQLAlchemy assigns the signal ID
+        # FLUSH SIGNAL
         # -------------------------------------------------
 
         db.flush()
 
         # -------------------------------------------------
-        # Create Buying Activity
+        # CREATE BUYING ACTIVITY
         # -------------------------------------------------
 
         activity = BuyingActivity(
@@ -258,13 +243,13 @@ class BuyingSignalService:
             confidence=confidence,
             processed=False,
             discovered_at=detected_at,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         db.add(activity)
 
         # -------------------------------------------------
-        # Commit signal + activity together
+        # COMMIT SIGNAL + ACTIVITY
         # -------------------------------------------------
 
         try:
@@ -282,25 +267,15 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
-        # Refresh database records
+        # REFRESH DATABASE RECORDS
         # -------------------------------------------------
 
         db.refresh(signal)
-
         db.refresh(activity)
 
         # -------------------------------------------------
-        # BUYING INTELLIGENCE SCORE
+        # CALCULATE COMPANY BUYING SCORE
         # -------------------------------------------------
-
-        """
-        Recalculate the complete company buying-intent
-        score using all BuyingActivity records.
-
-        This ensures the company score represents the
-        accumulated buying-intent evidence currently
-        recorded by LUIP.
-        """
 
         try:
 
@@ -325,7 +300,7 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
-        # Determine calculated score
+        # DETERMINE COMPANY SCORE VALUES
         # -------------------------------------------------
 
         calculated_score = (
@@ -349,14 +324,6 @@ class BuyingSignalService:
         # -------------------------------------------------
         # NEXT BEST ACTION
         # -------------------------------------------------
-
-        """
-        Generate or refresh the company's pending
-        Next Best Action.
-
-        Existing completed actions are preserved by
-        NextBestActionService.
-        """
 
         try:
 
@@ -388,25 +355,17 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
-        # Build LBIT response
+        # BUILD LBIT RESULT
         # -------------------------------------------------
 
         if lbit_classification is not None:
 
             lbit_result = {
                 "classified": True,
-                "level": (
-                    lbit_classification.level
-                ),
-                "category": (
-                    lbit_classification.category
-                ),
-                "score": (
-                    lbit_classification.score
-                ),
-                "confidence": (
-                    lbit_classification.confidence
-                ),
+                "level": lbit_classification.level,
+                "category": lbit_classification.category,
+                "score": lbit_classification.score,
+                "confidence": lbit_classification.confidence,
             }
 
         else:
@@ -420,55 +379,119 @@ class BuyingSignalService:
             }
 
         # -------------------------------------------------
-        # Return structured result
+        # RETURN STRUCTURED RESULT
+        #
+        # The response intentionally contains BOTH:
+        #
+        # 1. Nested modern LUIP structures
+        # 2. Flat backward-compatible fields
+        #
+        # This keeps the current router tests and
+        # downstream LUIP integrations compatible.
         # -------------------------------------------------
 
         return {
             "success": True,
 
-            "version": (
-                BuyingSignalService.VERSION
+            "version": BuyingSignalService.VERSION,
+
+            # -------------------------------------------------
+            # BACKWARD-COMPATIBLE FLAT COMPANY FIELDS
+            # -------------------------------------------------
+
+            "company_id": company.id,
+            "company_name": company.name,
+
+            # -------------------------------------------------
+            # BACKWARD-COMPATIBLE FLAT SIGNAL FIELDS
+            # -------------------------------------------------
+
+            "signal_id": signal.id,
+            "signal_name": signal.signal_name,
+            "signal_category": signal.signal_category,
+            "source": signal.source,
+            "source_url": signal.source_url,
+            "evidence": signal.evidence,
+            "score": signal.score,
+            "confidence": signal.confidence,
+
+            # -------------------------------------------------
+            # BACKWARD-COMPATIBLE FLAT LBIT FIELDS
+            # -------------------------------------------------
+
+            "lbit_level": (
+                lbit_classification.level
+                if lbit_classification is not None
+                else None
             ),
+
+            "lbit_category": (
+                lbit_classification.category
+                if lbit_classification is not None
+                else None
+            ),
+
+            "lbit_score": (
+                lbit_classification.score
+                if lbit_classification is not None
+                else None
+            ),
+
+            "lbit_confidence": (
+                lbit_classification.confidence
+                if lbit_classification is not None
+                else None
+            ),
+
+            # -------------------------------------------------
+            # NESTED COMPANY
+            # -------------------------------------------------
 
             "company": {
                 "id": company.id,
                 "name": company.name,
             },
 
+            # -------------------------------------------------
+            # NESTED SIGNAL
+            # -------------------------------------------------
+
             "signal": {
                 "id": signal.id,
                 "signal_name": signal.signal_name,
-                "signal_category": (
-                    signal.signal_category
-                ),
+                "signal_category": signal.signal_category,
                 "source": signal.source,
                 "source_url": signal.source_url,
                 "evidence": signal.evidence,
                 "score": signal.score,
                 "confidence": signal.confidence,
-                "detected_at": (
-                    signal.detected_at
-                ),
+                "detected_at": signal.detected_at,
             },
+
+            # -------------------------------------------------
+            # NESTED LBIT
+            # -------------------------------------------------
 
             "lbit": lbit_result,
 
+            # -------------------------------------------------
+            # COMPANY SCORE
+            # -------------------------------------------------
+
             "company_score": {
-                "buying_intent_score": (
-                    calculated_score
-                ),
-                "confidence": (
-                    calculated_confidence
-                ),
-                "priority": (
-                    calculated_priority
-                ),
+                "buying_intent_score": calculated_score,
+                "confidence": calculated_confidence,
+                "priority": calculated_priority,
                 "last_updated": (
                     company_score.last_updated
                     if company_score is not None
                     else None
                 ),
             },
+
+            # -------------------------------------------------
+            # NEXT BEST ACTION
+            # -------------------------------------------------
 
             "next_best_action": {
                 "id": (
@@ -513,46 +536,30 @@ class BuyingSignalService:
                 ),
             },
 
+            # -------------------------------------------------
+            # BUYING ACTIVITY
+            # -------------------------------------------------
+
             "buying_activity": {
                 "id": activity.id,
-                "activity_type": (
-                    activity.activity_type
-                ),
-                "activity_source": (
-                    activity.activity_source
-                ),
+                "activity_type": activity.activity_type,
+                "activity_source": activity.activity_source,
                 "title": activity.title,
-                "description": (
-                    activity.description
-                ),
+                "description": activity.description,
                 "url": activity.url,
-                "buying_score": (
-                    activity.buying_score
-                ),
-                "confidence": (
-                    activity.confidence
-                ),
-                "processed": (
-                    activity.processed
-                ),
-                "ai_summary": (
-                    activity.ai_summary
-                ),
-                "ai_recommendation": (
-                    activity.ai_recommendation
-                ),
-                "discovered_at": (
-                    activity.discovered_at
-                ),
-                "created_at": (
-                    activity.created_at
-                ),
+                "buying_score": activity.buying_score,
+                "confidence": activity.confidence,
+                "processed": activity.processed,
+                "ai_summary": activity.ai_summary,
+                "ai_recommendation": activity.ai_recommendation,
+                "discovered_at": activity.discovered_at,
+                "created_at": activity.created_at,
             },
         }
 
-    # -----------------------------------------------------
-    # BACKWARD-COMPATIBILITY METHOD
-    # -----------------------------------------------------
+    # =====================================================
+    # BACKWARD COMPATIBILITY
+    # =====================================================
 
     @staticmethod
     def record_signal(
@@ -582,9 +589,9 @@ class BuyingSignalService:
             confidence=confidence,
         )
 
-    # -----------------------------------------------------
+    # =====================================================
     # GET COMPANY SIGNALS
-    # -----------------------------------------------------
+    # =====================================================
 
     @staticmethod
     def get_company_signals(
@@ -611,8 +618,7 @@ class BuyingSignalService:
         signals = (
             db.query(BuyingIntentSignal)
             .filter(
-                BuyingIntentSignal.company_id
-                == company_id
+                BuyingIntentSignal.company_id == company_id
             )
             .order_by(
                 BuyingIntentSignal.detected_at.desc()
@@ -627,50 +633,35 @@ class BuyingSignalService:
             "signals": [
                 {
                     "id": signal.id,
-                    "signal_name": (
-                        signal.signal_name
-                    ),
+                    "signal_name": signal.signal_name,
                     "signal_category": (
                         signal.signal_category
                     ),
                     "source": signal.source,
-                    "source_url": (
-                        signal.source_url
-                    ),
+                    "source_url": signal.source_url,
                     "evidence": signal.evidence,
                     "score": signal.score,
-                    "confidence": (
-                        signal.confidence
-                    ),
+                    "confidence": signal.confidence,
                     "lbit": {
                         "classified": (
-                            signal.lbit_level
-                            is not None
+                            signal.lbit_level is not None
                         ),
-                        "level": (
-                            signal.lbit_level
-                        ),
-                        "category": (
-                            signal.lbit_category
-                        ),
-                        "score": (
-                            signal.lbit_score
-                        ),
+                        "level": signal.lbit_level,
+                        "category": signal.lbit_category,
+                        "score": signal.lbit_score,
                         "confidence": (
                             signal.lbit_confidence
                         ),
                     },
-                    "detected_at": (
-                        signal.detected_at
-                    ),
+                    "detected_at": signal.detected_at,
                 }
                 for signal in signals
             ],
         }
 
-    # -----------------------------------------------------
+    # =====================================================
     # GET COMPANY ACTIVITIES
-    # -----------------------------------------------------
+    # =====================================================
 
     @staticmethod
     def get_company_activities(
@@ -696,8 +687,7 @@ class BuyingSignalService:
         activities = (
             db.query(BuyingActivity)
             .filter(
-                BuyingActivity.company_id
-                == company_id
+                BuyingActivity.company_id == company_id
             )
             .order_by(
                 BuyingActivity.discovered_at.desc()
@@ -726,24 +716,16 @@ class BuyingSignalService:
                     "buying_score": (
                         activity.buying_score
                     ),
-                    "confidence": (
-                        activity.confidence
-                    ),
-                    "processed": (
-                        activity.processed
-                    ),
-                    "ai_summary": (
-                        activity.ai_summary
-                    ),
+                    "confidence": activity.confidence,
+                    "processed": activity.processed,
+                    "ai_summary": activity.ai_summary,
                     "ai_recommendation": (
                         activity.ai_recommendation
                     ),
                     "discovered_at": (
                         activity.discovered_at
                     ),
-                    "created_at": (
-                        activity.created_at
-                    ),
+                    "created_at": activity.created_at,
                 }
                 for activity in activities
             ],
