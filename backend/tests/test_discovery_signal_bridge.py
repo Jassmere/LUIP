@@ -1,56 +1,37 @@
-"""
-LUIP Discovery Signal Bridge Tests.
-
-Tests the bridge between:
-
-    Website / LinkedIn Discovery
-                ↓
-    DiscoverySignalBridge
-                ↓
-    BuyingSignalService
-                ↓
-    BuyingIntentSignal
-                ↓
-    BuyingActivity
-                ↓
-    Company Buying Score
-                ↓
-    Next Best Action
-
-Version: 1.0.0
-"""
-
-import pytest
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+import pytest
 
 from app.db.base import Base
 
+# ---------------------------------------------------------
+# IMPORTANT MODEL REGISTRATION
+# ---------------------------------------------------------
+# BuyingActivity contains a foreign key to:
+#
+#     decision_makers.id
+#
+# SQLAlchemy must have the DecisionMaker model registered
+# in Base.metadata before create_all() is called.
 from app.models.company import Company
-from app.models.buying_intent_signal import (
-    BuyingIntentSignal,
-)
-from app.models.buying_activity import (
-    BuyingActivity,
-)
+from app.models.decision_maker import DecisionMaker
+from app.models.buying_intent_signal import BuyingIntentSignal
+from app.models.buying_activity import BuyingActivity
 
 from app.services.discovery_signal_bridge import (
     DiscoverySignalBridge,
 )
 
 
-# ---------------------------------------------------------
+# =========================================================
 # TEST DATABASE
-# ---------------------------------------------------------
+# =========================================================
 
 engine = create_engine(
     "sqlite:///:memory:",
     connect_args={
         "check_same_thread": False,
     },
-    poolclass=StaticPool,
 )
 
 TestingSessionLocal = sessionmaker(
@@ -983,8 +964,6 @@ def test_discovery_signals_remain_unclassified_when_not_lbit(
 
     assert signal is not None
 
-    # The discovery signal is not one of the
-    # currently verified LBIT Level 5 rules.
     assert signal.lbit_level is None
 
     assert signal.lbit_category is None

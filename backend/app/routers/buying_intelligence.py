@@ -2,8 +2,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.services.buying_intelligence_service import BuyingIntelligenceService
-from app.services.next_best_action_service import NextBestActionService
+from app.services.buying_intelligence_service import (
+    BuyingIntelligenceService,
+)
+from app.services.next_best_action_service import (
+    NextBestActionService,
+)
 
 
 router = APIRouter(
@@ -20,7 +24,9 @@ router = APIRouter(
 def list_companies(
     db: Session = Depends(get_db),
 ):
-    return BuyingIntelligenceService.get_all_companies(db)
+    return BuyingIntelligenceService.get_all_companies(
+        db,
+    )
 
 
 # ---------------------------------------------------------
@@ -46,8 +52,10 @@ def company_details(
 def top_targets(
     db: Session = Depends(get_db),
 ):
-    targets = BuyingIntelligenceService.get_top_buying_targets(
-        db,
+    targets = (
+        BuyingIntelligenceService.get_top_buying_targets(
+            db,
+        )
     )
 
     results = []
@@ -60,6 +68,10 @@ def top_targets(
 
         if isinstance(target, dict):
 
+            company_id = target.get(
+                "company_id",
+            )
+
             company_name = target.get(
                 "company",
                 target.get(
@@ -68,15 +80,6 @@ def top_targets(
                 ),
             )
 
-            # IMPORTANT:
-            # BuyingIntelligenceService returns
-            # "buying_intent_score".
-            #
-            # Keep backwards compatibility with:
-            # score
-            # buying_score
-            # buying_intent_score
-            #
             score = target.get(
                 "score",
                 target.get(
@@ -88,11 +91,22 @@ def top_targets(
                 ),
             )
 
+            confidence = target.get(
+                "confidence",
+                0,
+            )
+
         # -------------------------------------------------
         # Support ORM/object responses
         # -------------------------------------------------
 
         else:
+
+            company_id = getattr(
+                target,
+                "company_id",
+                None,
+            )
 
             company_name = getattr(
                 target,
@@ -114,6 +128,12 @@ def top_targets(
                 ),
             )
 
+            confidence = getattr(
+                target,
+                "confidence",
+                0,
+            )
+
         # -------------------------------------------------
         # Normalize score
         # -------------------------------------------------
@@ -125,13 +145,50 @@ def top_targets(
             score = 0.0
 
         # -------------------------------------------------
+        # Normalize confidence
+        # -------------------------------------------------
+
+        try:
+            confidence = float(
+                confidence or 0
+            )
+
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        confidence = min(
+            max(confidence, 0.0),
+            100.0,
+        )
+
+        # -------------------------------------------------
         # Generate Next Best Action
         # -------------------------------------------------
 
-        recommendation = NextBestActionService.generate(
-            company_name=company_name,
-            score=score,
+        recommendation = (
+            NextBestActionService.generate(
+                company_name=company_name,
+                score=score,
+                lbit_confidence=confidence,
+            )
         )
+
+        # -------------------------------------------------
+        # Persist Next Best Action
+        # -------------------------------------------------
+
+        persisted_action = None
+
+        if company_id is not None:
+
+            persisted_action = (
+                NextBestActionService.create_action(
+                    db=db,
+                    company_id=company_id,
+                    score=score,
+                    lbit_confidence=confidence,
+                )
+            )
 
         # -------------------------------------------------
         # Build result
@@ -144,26 +201,45 @@ def top_targets(
         else:
 
             result = {
+                "company_id": company_id,
                 "company": company_name,
                 "score": score,
+                "confidence": confidence,
             }
 
         # -------------------------------------------------
-        # Add normalized score for NBA consistency
-        #
-        # We retain the original buying_intent_score
-        # returned by the service while also exposing
-        # "score" so downstream components have a
-        # consistent field.
+        # Add normalized score
         # -------------------------------------------------
 
         result["score"] = score
 
         # -------------------------------------------------
-        # Add Next Best Action
+        # Add generated recommendation
         # -------------------------------------------------
 
         result["next_best_action"] = recommendation
+
+        # -------------------------------------------------
+        # Add persistence metadata
+        # -------------------------------------------------
+
+        if persisted_action is not None:
+
+            result["next_best_action_id"] = (
+                persisted_action.id
+            )
+
+            result["next_best_action_status"] = (
+                persisted_action.status
+            )
+
+        else:
+
+            result["next_best_action_id"] = None
+
+            result["next_best_action_status"] = (
+                "Not persisted"
+            )
 
         results.append(result)
 
