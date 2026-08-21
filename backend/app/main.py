@@ -21,6 +21,7 @@ from app.routers.discovery import router as discovery_router
 from app.routers.buying_intelligence import router as buying_router
 from app.routers.buying_signals import router as buying_signals_router
 from app.routers.scheduler import router as scheduler_router
+from app.routers.outreach import router as outreach_router
 
 # ---------------------------------------------------------
 # Scheduler
@@ -65,7 +66,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="LUIP Enterprise Platform",
-    version="1.1.1",
+    version="1.3.3",
     lifespan=lifespan,
 )
 
@@ -98,6 +99,8 @@ app.include_router(buying_signals_router)
 
 app.include_router(scheduler_router)
 
+app.include_router(outreach_router)
+
 
 # ---------------------------------------------------------
 # Root Endpoint
@@ -107,6 +110,6 @@ app.include_router(scheduler_router)
 def root():
     return {
         "platform": "LUIP Enterprise Platform",
-        "version": "1.1.1",
+        "version": "1.3.3",
         "status": "Running",
     }
