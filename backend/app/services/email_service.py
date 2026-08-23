@@ -823,7 +823,12 @@ class EmailService:
         )
 
         # -------------------------------------------------
-        # LOAD EXECUTABLE QUEUE
+        # LOAD QUEUE
+        # -------------------------------------------------
+        #
+        # Load all executable statuses first.
+        # We intentionally keep future-scheduled entries
+        # in this collection long enough to count them.
         # -------------------------------------------------
 
         queue_entries = (
@@ -843,6 +848,27 @@ class EmailService:
         )
 
         # -------------------------------------------------
+        # COUNT FUTURE-SCHEDULED ENTRIES
+        # -------------------------------------------------
+        #
+        # IMPORTANT:
+        # This must happen BEFORE future entries are removed
+        # from the executable list.
+        # -------------------------------------------------
+
+        scheduled_entries = [
+            entry
+            for entry in queue_entries
+            if EmailService.is_scheduled_for_future(
+                entry
+            )
+        ]
+
+        scheduled_skipped = len(
+            scheduled_entries
+        )
+
+        # -------------------------------------------------
         # REMOVE FUTURE-SCHEDULED ENTRIES
         # -------------------------------------------------
 
@@ -853,6 +879,10 @@ class EmailService:
                 entry
             )
         ]
+
+        # -------------------------------------------------
+        # PRIORITY ORDER
+        # -------------------------------------------------
 
         executable_entries.sort(
             key=lambda entry: (
@@ -870,18 +900,9 @@ class EmailService:
 
         results = []
 
-        skipped_scheduled = max(
-            0,
-            len(
-                [
-                    entry
-                    for entry in queue_entries
-                    if EmailService.is_scheduled_for_future(
-                        entry
-                    )
-                ]
-            ),
-        )
+        # -------------------------------------------------
+        # PROCESS EXECUTABLE ENTRIES
+        # -------------------------------------------------
 
         for email_queue in queue_entries:
 
@@ -893,6 +914,10 @@ class EmailService:
             )
 
             results.append(result)
+
+        # -------------------------------------------------
+        # RESULT COUNTS
+        # -------------------------------------------------
 
         sent_count = sum(
             1
@@ -919,6 +944,10 @@ class EmailService:
             if result.get("dry_run")
         )
 
+        # -------------------------------------------------
+        # FINAL RESULT
+        # -------------------------------------------------
+
         return {
             "success": True,
             "version": EmailService.VERSION,
@@ -928,6 +957,6 @@ class EmailService:
             "failed": failed_count,
             "dry_run_count": dry_run_count,
             "stale_recovered": stale_recovered,
-            "scheduled_skipped": skipped_scheduled,
+            "scheduled_skipped": scheduled_skipped,
             "results": results,
         }
