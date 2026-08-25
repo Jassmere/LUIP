@@ -1,4 +1,4 @@
-import pytest
+﻿import pytest
 
 from email.message import EmailMessage
 
@@ -15,6 +15,27 @@ from app.models.outreach_campaign import OutreachCampaign
 from app.models.email_queue import EmailQueue
 
 from app.services.email_service import EmailService
+# =========================================================
+# LIVE EMAIL TEST AUTHORIZATION
+# =========================================================
+#
+# This test module exercises the SMTP/live execution path.
+# The dedicated test_email_live_safety.py module separately
+# verifies that the production safety gate blocks live email
+# unless explicitly authorized.
+#
+
+@pytest.fixture(autouse=True)
+def authorize_live_email_tests(monkeypatch):
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
+        ),
+    )
+
 
 from app.config import settings
 

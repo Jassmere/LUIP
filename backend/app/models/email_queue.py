@@ -43,6 +43,29 @@ class EmailQueue(Base):
         nullable=True,
     )
 
+    # =====================================================
+    # SMTP PROVIDER
+    # =====================================================
+    #
+    # Supported values:
+    #
+    #     default
+    #     gmail
+    #     outlook
+    #     zoho
+    #
+    # "default" preserves backwards compatibility with
+    # the original SMTP_* configuration.
+    #
+
+    smtp_provider = Column(
+        String(50),
+        nullable=False,
+        default="default",
+        server_default="default",
+        index=True,
+    )
+
     recipient_email = Column(
         String(255),
         nullable=False,

@@ -11,14 +11,6 @@ from app.config import settings
 # ---------------------------------------------------------
 # Model registration
 # ---------------------------------------------------------
-#
-# Register the models referenced by EmailQueue relationships
-# before SQLAlchemy initializes the EmailQueue mapper.
-#
-# This is especially important when the outreach scheduler
-# is executed directly rather than through the full FastAPI
-# application startup sequence.
-# ---------------------------------------------------------
 
 from app.models.company import Company
 from app.models.decision_maker import DecisionMaker
@@ -32,7 +24,14 @@ class EmailService:
     LUIP Email Execution Service.
 
     Responsible for transmitting prepared EmailQueue
-    records through SMTP.
+    records through the configured SMTP provider.
+
+    Supported providers:
+
+        default
+        gmail
+        outlook
+        zoho
 
     This service does NOT create campaigns and does NOT
     generate outreach content.
@@ -43,42 +42,358 @@ class EmailService:
             ↓
         EmailService
             ↓
-        SMTP
+        Selected SMTP Provider
             ↓
         Recipient
+
+    Live transmission requires BOTH:
+
+        EMAIL_DRY_RUN=False
+        EMAIL_LIVE_ENABLED=True
+
+    Additional live protection:
+
+        EMAIL_LIVE_MAX_BATCH
+
+    controls the maximum number of messages that may be
+    processed during one live scheduler execution.
 
     Version: 1.0.0
     """
 
     VERSION = "1.0.0"
 
+    SUPPORTED_PROVIDERS = {
+        "default",
+        "gmail",
+        "outlook",
+        "zoho",
+    }
+
+    # =====================================================
+    # PROVIDER NORMALIZATION
+    # =====================================================
+
+    @staticmethod
+    def normalize_provider(
+        provider: str | None,
+    ) -> str:
+        """
+        Normalize an SMTP provider name.
+
+        Missing or blank values use the configured default
+        provider.
+
+        Unknown providers raise ValueError rather than
+        silently selecting an unintended mailbox.
+        """
+
+        if provider is None:
+            provider = getattr(
+                settings,
+                "SMTP_DEFAULT_PROVIDER",
+                "default",
+            )
+
+        provider = str(provider).strip().lower()
+
+        if not provider:
+            provider = getattr(
+                settings,
+                "SMTP_DEFAULT_PROVIDER",
+                "default",
+            )
+
+            provider = str(provider).strip().lower()
+
+        if provider not in EmailService.SUPPORTED_PROVIDERS:
+            raise ValueError(
+                f"Unsupported SMTP provider: {provider}. "
+                f"Supported providers: "
+                f"{', '.join(sorted(EmailService.SUPPORTED_PROVIDERS))}."
+            )
+
+        return provider
+
+    # =====================================================
+    # PROVIDER CONFIGURATION
+    # =====================================================
+
+    @staticmethod
+    def get_provider_config(
+        provider: str | None = None,
+    ) -> dict:
+        """
+        Return the SMTP configuration for a provider.
+
+        The default provider uses the original SMTP_* fields.
+
+        Gmail, Outlook and Zoho use provider-specific settings.
+        """
+
+        provider = EmailService.normalize_provider(
+            provider
+        )
+
+        if provider == "gmail":
+
+            return {
+                "provider": "gmail",
+                "host": getattr(
+                    settings,
+                    "GMAIL_SMTP_HOST",
+                    "smtp.gmail.com",
+                ),
+                "port": getattr(
+                    settings,
+                    "GMAIL_SMTP_PORT",
+                    587,
+                ),
+                "username": getattr(
+                    settings,
+                    "GMAIL_SMTP_USERNAME",
+                    "",
+                ),
+                "password": getattr(
+                    settings,
+                    "GMAIL_SMTP_PASSWORD",
+                    "",
+                ),
+                "from_email": getattr(
+                    settings,
+                    "GMAIL_SMTP_FROM_EMAIL",
+                    "",
+                ),
+                "from_name": getattr(
+                    settings,
+                    "GMAIL_SMTP_FROM_NAME",
+                    "Lawyered Up",
+                ),
+                "use_tls": bool(
+                    getattr(
+                        settings,
+                        "GMAIL_SMTP_USE_TLS",
+                        True,
+                    )
+                ),
+                "use_ssl": bool(
+                    getattr(
+                        settings,
+                        "GMAIL_SMTP_USE_SSL",
+                        False,
+                    )
+                ),
+                "timeout": int(
+                    getattr(
+                        settings,
+                        "GMAIL_SMTP_TIMEOUT",
+                        30,
+                    )
+                ),
+            }
+
+        if provider == "outlook":
+
+            return {
+                "provider": "outlook",
+                "host": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_HOST",
+                    "smtp.office365.com",
+                ),
+                "port": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_PORT",
+                    587,
+                ),
+                "username": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_USERNAME",
+                    "",
+                ),
+                "password": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_PASSWORD",
+                    "",
+                ),
+                "from_email": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_FROM_EMAIL",
+                    "",
+                ),
+                "from_name": getattr(
+                    settings,
+                    "OUTLOOK_SMTP_FROM_NAME",
+                    "Lawyered Up",
+                ),
+                "use_tls": bool(
+                    getattr(
+                        settings,
+                        "OUTLOOK_SMTP_USE_TLS",
+                        True,
+                    )
+                ),
+                "use_ssl": bool(
+                    getattr(
+                        settings,
+                        "OUTLOOK_SMTP_USE_SSL",
+                        False,
+                    )
+                ),
+                "timeout": int(
+                    getattr(
+                        settings,
+                        "OUTLOOK_SMTP_TIMEOUT",
+                        30,
+                    )
+                ),
+            }
+
+        if provider == "zoho":
+
+            return {
+                "provider": "zoho",
+                "host": getattr(
+                    settings,
+                    "ZOHO_SMTP_HOST",
+                    "smtp.zoho.com",
+                ),
+                "port": getattr(
+                    settings,
+                    "ZOHO_SMTP_PORT",
+                    587,
+                ),
+                "username": getattr(
+                    settings,
+                    "ZOHO_SMTP_USERNAME",
+                    "",
+                ),
+                "password": getattr(
+                    settings,
+                    "ZOHO_SMTP_PASSWORD",
+                    "",
+                ),
+                "from_email": getattr(
+                    settings,
+                    "ZOHO_SMTP_FROM_EMAIL",
+                    "",
+                ),
+                "from_name": getattr(
+                    settings,
+                    "ZOHO_SMTP_FROM_NAME",
+                    "Lawyered Up",
+                ),
+                "use_tls": bool(
+                    getattr(
+                        settings,
+                        "ZOHO_SMTP_USE_TLS",
+                        True,
+                    )
+                ),
+                "use_ssl": bool(
+                    getattr(
+                        settings,
+                        "ZOHO_SMTP_USE_SSL",
+                        False,
+                    )
+                ),
+                "timeout": int(
+                    getattr(
+                        settings,
+                        "ZOHO_SMTP_TIMEOUT",
+                        30,
+                    )
+                ),
+            }
+
+        return {
+            "provider": "default",
+            "host": getattr(
+                settings,
+                "SMTP_HOST",
+                "",
+            ),
+            "port": getattr(
+                settings,
+                "SMTP_PORT",
+                587,
+            ),
+            "username": getattr(
+                settings,
+                "SMTP_USERNAME",
+                "",
+            ),
+            "password": getattr(
+                settings,
+                "SMTP_PASSWORD",
+                "",
+            ),
+            "from_email": getattr(
+                settings,
+                "SMTP_FROM_EMAIL",
+                "",
+            ),
+            "from_name": getattr(
+                settings,
+                "SMTP_FROM_NAME",
+                "Lawyered Up",
+            ),
+            "use_tls": bool(
+                getattr(
+                    settings,
+                    "SMTP_USE_TLS",
+                    True,
+                )
+            ),
+            "use_ssl": bool(
+                getattr(
+                    settings,
+                    "SMTP_USE_SSL",
+                    False,
+                )
+            ),
+            "timeout": int(
+                getattr(
+                    settings,
+                    "SMTP_TIMEOUT",
+                    30,
+                )
+            ),
+        }
+
     # =====================================================
     # CONFIGURATION
     # =====================================================
 
     @staticmethod
-    def is_configured() -> bool:
+    def is_configured(
+        provider: str | None = None,
+    ) -> bool:
         """
-        Return True when the minimum SMTP configuration
-        required for live sending is available.
+        Return True when the selected SMTP provider has the
+        minimum configuration required for live sending.
         """
 
+        try:
+            config = EmailService.get_provider_config(
+                provider
+            )
+
+        except ValueError:
+            return False
+
         return bool(
-            getattr(settings, "SMTP_HOST", "")
-            and getattr(settings, "SMTP_PORT", None)
-            and getattr(settings, "SMTP_USERNAME", "")
-            and getattr(settings, "SMTP_PASSWORD", "")
-            and getattr(settings, "SMTP_FROM_EMAIL", "")
+            config["host"]
+            and config["port"]
+            and config["username"]
+            and config["password"]
+            and config["from_email"]
         )
 
     @staticmethod
     def is_dry_run() -> bool:
         """
         Return whether live email transmission is disabled.
-
-        Dry-run defaults to True so the LUIP scheduler cannot
-        accidentally transmit email before the pilot operator
-        explicitly enables live sending.
         """
 
         return bool(
@@ -86,6 +401,38 @@ class EmailService:
                 settings,
                 "EMAIL_DRY_RUN",
                 True,
+            )
+        )
+
+    @staticmethod
+    def is_live_enabled() -> bool:
+        """
+        Return whether explicit operator authorization for
+        live email transmission has been enabled.
+        """
+
+        return bool(
+            getattr(
+                settings,
+                "EMAIL_LIVE_ENABLED",
+                False,
+            )
+        )
+
+    @staticmethod
+    def can_send_live(
+        provider: str | None = None,
+    ) -> bool:
+        """
+        Return True only when live transmission is authorized
+        and the selected SMTP provider is configured.
+        """
+
+        return (
+            not EmailService.is_dry_run()
+            and EmailService.is_live_enabled()
+            and EmailService.is_configured(
+                provider
             )
         )
 
@@ -97,9 +444,6 @@ class EmailService:
     def utc_now() -> datetime:
         """
         Return the current timezone-aware UTC timestamp.
-
-        Centralising this call makes scheduling and stale
-        processing logic easier to test.
         """
 
         return datetime.now(UTC)
@@ -110,10 +454,7 @@ class EmailService:
     ) -> bool:
         """
         Return True when the queue entry has a scheduled_for
-        timestamp that is later than the current UTC time.
-
-        A queue entry without scheduled_for is immediately
-        executable.
+        timestamp later than the current UTC time.
         """
 
         scheduled_for = email_queue.scheduled_for
@@ -137,11 +478,6 @@ class EmailService:
         Recover EmailQueue records that have remained in
         Processing state longer than the configured stale
         threshold.
-
-        Recovered entries are returned to Pending so the
-        scheduler can safely retry them.
-
-        Returns the number of recovered records.
         """
 
         if stale_minutes is None or stale_minutes <= 0:
@@ -166,9 +502,7 @@ class EmailService:
 
         for email_queue in processing_entries:
 
-            updated_at = (
-                email_queue.updated_at
-            )
+            updated_at = email_queue.updated_at
 
             if updated_at is None:
                 is_stale = True
@@ -201,14 +535,12 @@ class EmailService:
             recovered += 1
 
         if recovered:
+
             db.commit()
 
             for email_queue in processing_entries:
 
-                if (
-                    email_queue.status
-                    == "Pending"
-                ):
+                if email_queue.status == "Pending":
                     db.refresh(email_queue)
 
         return recovered
@@ -218,52 +550,43 @@ class EmailService:
     # =====================================================
 
     @staticmethod
-    def create_smtp_connection():
+    def create_smtp_connection(
+        provider: str | None = None,
+    ):
         """
-        Create and authenticate an SMTP connection.
+        Create and authenticate an SMTP connection for the
+        selected provider.
 
         Supports:
 
-            SMTP_USE_TLS=True
-                STARTTLS
-
-        and:
-
-            SMTP_USE_SSL=True
-                implicit SSL
-
-        The connection is returned to the caller and must
-        be closed by the caller.
+            SMTP over SSL
+            STARTTLS
+            Plain SMTP when TLS is disabled
         """
 
-        host = settings.SMTP_HOST
-        port = settings.SMTP_PORT
-        username = settings.SMTP_USERNAME
-        password = settings.SMTP_PASSWORD
-
-        use_ssl = bool(
-            getattr(
-                settings,
-                "SMTP_USE_SSL",
-                False,
-            )
+        config = EmailService.get_provider_config(
+            provider
         )
 
-        use_tls = bool(
-            getattr(
-                settings,
-                "SMTP_USE_TLS",
-                True,
-            )
-        )
+        host = config["host"]
+        port = config["port"]
+        username = config["username"]
+        password = config["password"]
+        use_ssl = config["use_ssl"]
+        use_tls = config["use_tls"]
+        timeout = config["timeout"]
 
-        timeout = int(
-            getattr(
-                settings,
-                "SMTP_TIMEOUT",
-                30,
+        if not host:
+            raise ValueError(
+                f"SMTP host is not configured for "
+                f"provider '{config['provider']}'."
             )
-        )
+
+        if not port:
+            raise ValueError(
+                f"SMTP port is not configured for "
+                f"provider '{config['provider']}'."
+            )
 
         context = ssl.create_default_context()
 
@@ -313,19 +636,29 @@ class EmailService:
     ) -> EmailMessage:
         """
         Convert an EmailQueue record into an EmailMessage.
+
+        The From address and display name are selected from
+        the SMTP provider assigned to the queue entry.
         """
 
-        from_name = getattr(
-            settings,
-            "SMTP_FROM_NAME",
-            "Lawyered Up",
+        provider = getattr(
+            email_queue,
+            "smtp_provider",
+            None,
         )
 
-        from_email = getattr(
-            settings,
-            "SMTP_FROM_EMAIL",
-            "",
+        config = EmailService.get_provider_config(
+            provider
         )
+
+        from_name = config["from_name"]
+        from_email = config["from_email"]
+
+        if not from_email:
+            raise ValueError(
+                f"SMTP From email is not configured for "
+                f"provider '{config['provider']}'."
+            )
 
         message = EmailMessage()
 
@@ -358,9 +691,23 @@ class EmailService:
         """
         Send one EmailQueue record.
 
-        Returns a structured result.
-
         No database changes are performed here.
+
+        Important execution order:
+
+            1. Validate recipient
+            2. Resolve provider
+            3. Apply dry-run protection
+            4. Apply live authorization protection
+            5. Check SMTP configuration
+            6. Establish SMTP connection
+            7. Build email message
+            8. Send email
+            9. Close SMTP connection
+
+        Building the message occurs after SMTP connection
+        creation so SMTP connection failures are surfaced
+        correctly and can be tested independently.
         """
 
         if not email_queue.recipient_email:
@@ -372,6 +719,25 @@ class EmailService:
                 ),
             }
 
+        provider = getattr(
+            email_queue,
+            "smtp_provider",
+            None,
+        )
+
+        try:
+
+            provider = EmailService.normalize_provider(
+                provider
+            )
+
+        except ValueError as exc:
+
+            return {
+                "success": False,
+                "error": str(exc),
+            }
+
         # -------------------------------------------------
         # DRY RUN SAFETY
         # -------------------------------------------------
@@ -381,9 +747,28 @@ class EmailService:
             return {
                 "success": True,
                 "dry_run": True,
+                "provider": provider,
                 "message": (
                     "Email transmission skipped "
                     "because EMAIL_DRY_RUN is enabled."
+                ),
+            }
+
+        # -------------------------------------------------
+        # EXPLICIT LIVE AUTHORIZATION
+        # -------------------------------------------------
+
+        if not EmailService.is_live_enabled():
+
+            return {
+                "success": False,
+                "live_blocked": True,
+                "provider": provider,
+                "error": (
+                    "Live email transmission is disabled. "
+                    "Set EMAIL_LIVE_ENABLED=True only after "
+                    "SMTP configuration and pilot approval "
+                    "have been completed."
                 ),
             }
 
@@ -395,6 +780,7 @@ class EmailService:
 
             return {
                 "success": False,
+                "provider": provider,
                 "error": (
                     "SMTP is not configured."
                 ),
@@ -404,15 +790,27 @@ class EmailService:
 
         try:
 
+            # ---------------------------------------------
+            # CONNECT FIRST
+            # ---------------------------------------------
+
+            smtp = (
+                EmailService.create_smtp_connection()
+            )
+
+            # ---------------------------------------------
+            # BUILD MESSAGE AFTER CONNECTION
+            # ---------------------------------------------
+
             message = (
                 EmailService.build_email_message(
                     email_queue
                 )
             )
 
-            smtp = (
-                EmailService.create_smtp_connection()
-            )
+            # ---------------------------------------------
+            # TRANSMIT
+            # ---------------------------------------------
 
             smtp.send_message(
                 message
@@ -421,6 +819,7 @@ class EmailService:
             return {
                 "success": True,
                 "dry_run": False,
+                "provider": provider,
                 "message": (
                     "Email sent successfully."
                 ),
@@ -433,6 +832,7 @@ class EmailService:
 
             return {
                 "success": False,
+                "provider": provider,
                 "error": str(exc),
             }
 
@@ -455,14 +855,6 @@ class EmailService:
         db: Session,
         email_queue: EmailQueue,
     ) -> None:
-        """
-        Synchronize a successfully delivered email with
-        its associated OutreachCampaign.
-
-        Delivery means the campaign email was transmitted
-        successfully. It does not mean the recipient opened,
-        clicked, replied, or booked a meeting.
-        """
 
         campaign_id = (
             email_queue.campaign_id
@@ -503,13 +895,6 @@ class EmailService:
         db: Session,
         email_queue: EmailQueue,
     ) -> None:
-        """
-        Synchronize a terminal email delivery failure with
-        the associated campaign.
-
-        A campaign is marked Failed only when the queue entry
-        reaches its maximum retry count.
-        """
 
         campaign_id = (
             email_queue.campaign_id
@@ -536,10 +921,13 @@ class EmailService:
             else 5
         )
 
-        if (
+        retry_count = (
             email_queue.retry_count
-            < max_retries
-        ):
+            if email_queue.retry_count is not None
+            else 0
+        )
+
+        if retry_count < max_retries:
             return
 
         campaign.status = "Failed"
@@ -560,24 +948,8 @@ class EmailService:
         """
         Process one EmailQueue record.
 
-        Status transitions:
-
-            Pending
-                ↓
-            Processing
-                ↓
-            Sent
-
-        OR:
-
-            Processing
-                ↓
-            Failed
-
-        Failed messages can be retried while retry_count
-        remains below max_retries.
-
-        Future scheduled messages are not processed.
+        Live authorization is checked before changing the
+        queue status to Processing.
         """
 
         if email_queue.status not in {
@@ -613,6 +985,29 @@ class EmailService:
                     "a future time."
                 ),
             }
+
+        # -------------------------------------------------
+        # LIVE AUTHORIZATION PROTECTION
+        # -------------------------------------------------
+
+        if (
+            not EmailService.is_dry_run()
+            and not EmailService.is_live_enabled()
+        ):
+
+            return {
+                "success": False,
+                "processed": False,
+                "live_blocked": True,
+                "queue_id": email_queue.id,
+                "reason": (
+                    "Live email transmission is disabled."
+                ),
+            }
+
+        # -------------------------------------------------
+        # RETRY INITIALIZATION
+        # -------------------------------------------------
 
         if email_queue.retry_count is None:
             email_queue.retry_count = 0
@@ -660,14 +1055,12 @@ class EmailService:
 
         if result.get("success"):
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # DRY RUN
-            # -------------------------------------------------
+            # ---------------------------------------------
 
             if result.get("dry_run"):
 
-                # Dry-run must never falsely mark an email
-                # as delivered.
                 email_queue.status = "Pending"
 
                 email_queue.updated_at = (
@@ -682,14 +1075,17 @@ class EmailService:
                     "processed": True,
                     "dry_run": True,
                     "queue_id": email_queue.id,
+                    "provider": result.get(
+                        "provider"
+                    ),
                     "message": result.get(
                         "message"
                     ),
                 }
 
-            # -------------------------------------------------
+            # ---------------------------------------------
             # LIVE SEND SUCCESS
-            # -------------------------------------------------
+            # ---------------------------------------------
 
             email_queue.status = "Sent"
 
@@ -716,15 +1112,20 @@ class EmailService:
                 "processed": True,
                 "dry_run": False,
                 "queue_id": email_queue.id,
+                "provider": result.get(
+                    "provider"
+                ),
                 "message": (
                     "Email queue entry sent."
                 ),
                 "campaign_id": (
                     email_queue.campaign_id
                 ),
-                "campaign_status": "Sent"
-                if email_queue.campaign_id
-                else None,
+                "campaign_status": (
+                    "Sent"
+                    if email_queue.campaign_id
+                    else None
+                ),
             }
 
         # -------------------------------------------------
@@ -762,6 +1163,9 @@ class EmailService:
             "processed": True,
             "dry_run": False,
             "queue_id": email_queue.id,
+            "provider": result.get(
+                "provider"
+            ),
             "retry_count": (
                 email_queue.retry_count
             ),
@@ -784,25 +1188,66 @@ class EmailService:
         """
         Process pending email queue entries.
 
-        The limit prevents one scheduler cycle from
-        accidentally sending an uncontrolled number of
-        emails.
+        Live execution requires explicit authorization.
 
-        Priority order:
-
-            Critical
-            High
-            Medium
-            Normal
-
-        Future scheduled messages remain untouched.
-
-        Stale Processing entries are recovered before
-        queue execution.
+        In live mode, EMAIL_LIVE_MAX_BATCH provides an
+        independent safety ceiling.
         """
 
         if limit is None or limit <= 0:
             limit = 10
+
+        # -------------------------------------------------
+        # GLOBAL LIVE AUTHORIZATION GATE
+        # -------------------------------------------------
+
+        if (
+            not EmailService.is_dry_run()
+            and not EmailService.is_live_enabled()
+        ):
+
+            return {
+                "success": False,
+                "version": EmailService.VERSION,
+                "dry_run": False,
+                "live_blocked": True,
+                "processed": 0,
+                "sent": 0,
+                "failed": 0,
+                "dry_run_count": 0,
+                "stale_recovered": 0,
+                "scheduled_skipped": 0,
+                "results": [],
+                "error": (
+                    "Live email transmission is disabled. "
+                    "Set EMAIL_LIVE_ENABLED=True only after "
+                    "SMTP configuration and pilot approval "
+                    "have been completed."
+                ),
+            }
+
+        # -------------------------------------------------
+        # LIVE EXECUTION SAFETY CEILING
+        # -------------------------------------------------
+
+        if not EmailService.is_dry_run():
+
+            live_max_batch = getattr(
+                settings,
+                "EMAIL_LIVE_MAX_BATCH",
+                1,
+            )
+
+            if (
+                live_max_batch is None
+                or live_max_batch <= 0
+            ):
+                live_max_batch = 1
+
+            limit = min(
+                limit,
+                int(live_max_batch),
+            )
 
         priority_order = {
             "Critical": 1,
@@ -825,11 +1270,6 @@ class EmailService:
         # -------------------------------------------------
         # LOAD QUEUE
         # -------------------------------------------------
-        #
-        # Load all executable statuses first.
-        # We intentionally keep future-scheduled entries
-        # in this collection long enough to count them.
-        # -------------------------------------------------
 
         queue_entries = (
             db.query(EmailQueue)
@@ -849,11 +1289,6 @@ class EmailService:
 
         # -------------------------------------------------
         # COUNT FUTURE-SCHEDULED ENTRIES
-        # -------------------------------------------------
-        #
-        # IMPORTANT:
-        # This must happen BEFORE future entries are removed
-        # from the executable list.
         # -------------------------------------------------
 
         scheduled_entries = [
