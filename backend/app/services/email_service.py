@@ -1,6 +1,5 @@
 import smtplib
 import ssl
-
 from datetime import datetime, UTC, timedelta
 from email.message import EmailMessage
 
@@ -27,7 +26,6 @@ class EmailService:
     records through the configured SMTP provider.
 
     Supported providers:
-
         default
         gmail
         outlook
@@ -51,17 +49,24 @@ class EmailService:
         EMAIL_DRY_RUN=False
         EMAIL_LIVE_ENABLED=True
 
-    Additional live protection:
+    Provider selection:
 
-        EMAIL_LIVE_MAX_BATCH
+        EmailQueue.smtp_provider
+            ↓
+        SMTP_DEFAULT_PROVIDER
+            ↓
+        Selected SMTP configuration
 
-    controls the maximum number of messages that may be
-    processed during one live scheduler execution.
+    Live safety:
 
-    Version: 1.0.0
+        EMAIL_LIVE_MAX_BATCH is a hard ceiling on the number
+        of live queue entries that may be processed during one
+        process_pending_queue() call.
+
+    Version: 1.1.0
     """
 
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
 
     SUPPORTED_PROVIDERS = {
         "default",
@@ -126,17 +131,22 @@ class EmailService:
         """
         Return the SMTP configuration for a provider.
 
-        The default provider uses the original SMTP_* fields.
+        When provider is omitted, the configured
+        SMTP_DEFAULT_PROVIDER is resolved.
 
-        Gmail, Outlook and Zoho use provider-specific settings.
+        The explicit "default" provider uses the original
+        SMTP_* fields for backward compatibility.
         """
 
         provider = EmailService.normalize_provider(
             provider
         )
 
-        if provider == "gmail":
+        # -------------------------------------------------
+        # GMAIL
+        # -------------------------------------------------
 
+        if provider == "gmail":
             return {
                 "provider": "gmail",
                 "host": getattr(
@@ -192,8 +202,11 @@ class EmailService:
                 ),
             }
 
-        if provider == "outlook":
+        # -------------------------------------------------
+        # OUTLOOK
+        # -------------------------------------------------
 
+        if provider == "outlook":
             return {
                 "provider": "outlook",
                 "host": getattr(
@@ -249,8 +262,11 @@ class EmailService:
                 ),
             }
 
-        if provider == "zoho":
+        # -------------------------------------------------
+        # ZOHO
+        # -------------------------------------------------
 
+        if provider == "zoho":
             return {
                 "provider": "zoho",
                 "host": getattr(
@@ -305,6 +321,10 @@ class EmailService:
                     )
                 ),
             }
+
+        # -------------------------------------------------
+        # DEFAULT / LEGACY SMTP
+        # -------------------------------------------------
 
         return {
             "provider": "default",
@@ -372,12 +392,50 @@ class EmailService:
         """
         Return True when the selected SMTP provider has the
         minimum configuration required for live sending.
+
+        Backward compatibility:
+
+        When provider is omitted, the original SMTP_* fields
+        are checked directly.
+
+        When provider is explicitly supplied, the
+        provider-specific configuration is checked.
         """
 
         try:
-            config = EmailService.get_provider_config(
-                provider
-            )
+            if provider is None:
+                config = {
+                    "host": getattr(
+                        settings,
+                        "SMTP_HOST",
+                        "",
+                    ),
+                    "port": getattr(
+                        settings,
+                        "SMTP_PORT",
+                        587,
+                    ),
+                    "username": getattr(
+                        settings,
+                        "SMTP_USERNAME",
+                        "",
+                    ),
+                    "password": getattr(
+                        settings,
+                        "SMTP_PASSWORD",
+                        "",
+                    ),
+                    "from_email": getattr(
+                        settings,
+                        "SMTP_FROM_EMAIL",
+                        "",
+                    ),
+                }
+
+            else:
+                config = EmailService.get_provider_config(
+                    provider
+                )
 
         except ValueError:
             return False
@@ -435,6 +493,48 @@ class EmailService:
                 provider
             )
         )
+
+    # =====================================================
+    # LIVE SAFETY
+    # =====================================================
+
+    @staticmethod
+    def get_live_max_batch() -> int:
+        """
+        Return the configured maximum number of live emails
+        permitted during one process_pending_queue() call.
+
+        The safety ceiling fails closed:
+
+        - Missing value defaults to 1.
+        - None defaults to 1.
+        - Invalid values default to 1.
+        - Values below 1 default to 1.
+
+        A value of 1 is deliberately conservative because
+        live email transmission is an externally visible
+        operation.
+        """
+
+        try:
+            max_batch = int(
+                getattr(
+                    settings,
+                    "EMAIL_LIVE_MAX_BATCH",
+                    1,
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return 1
+
+        if max_batch < 1:
+            return 1
+
+        return max_batch
 
     # =====================================================
     # TIME / SCHEDULING
@@ -501,14 +601,12 @@ class EmailService:
         recovered = 0
 
         for email_queue in processing_entries:
-
             updated_at = email_queue.updated_at
 
             if updated_at is None:
                 is_stale = True
 
             else:
-
                 if updated_at.tzinfo is None:
                     updated_at = updated_at.replace(
                         tzinfo=UTC
@@ -535,13 +633,13 @@ class EmailService:
             recovered += 1
 
         if recovered:
-
             db.commit()
 
             for email_queue in processing_entries:
-
                 if email_queue.status == "Pending":
-                    db.refresh(email_queue)
+                    db.refresh(
+                        email_queue
+                    )
 
         return recovered
 
@@ -591,7 +689,6 @@ class EmailService:
         context = ssl.create_default_context()
 
         if use_ssl:
-
             server = smtplib.SMTP_SSL(
                 host=host,
                 port=port,
@@ -600,7 +697,6 @@ class EmailService:
             )
 
         else:
-
             server = smtplib.SMTP(
                 host=host,
                 port=port,
@@ -610,7 +706,6 @@ class EmailService:
             server.ehlo()
 
             if use_tls:
-
                 server.starttls(
                     context=context
                 )
@@ -618,7 +713,6 @@ class EmailService:
                 server.ehlo()
 
         if username and password:
-
             server.login(
                 username,
                 password,
@@ -637,8 +731,13 @@ class EmailService:
         """
         Convert an EmailQueue record into an EmailMessage.
 
-        The From address and display name are selected from
-        the SMTP provider assigned to the queue entry.
+        Provider behaviour:
+
+        - If smtp_provider is explicitly assigned, the
+          selected provider configuration is used.
+
+        - If smtp_provider is missing, the original legacy
+          SMTP_* configuration is used.
         """
 
         provider = getattr(
@@ -647,18 +746,39 @@ class EmailService:
             None,
         )
 
-        config = EmailService.get_provider_config(
-            provider
-        )
+        if provider is None or not str(provider).strip():
 
-        from_name = config["from_name"]
-        from_email = config["from_email"]
-
-        if not from_email:
-            raise ValueError(
-                f"SMTP From email is not configured for "
-                f"provider '{config['provider']}'."
+            from_name = getattr(
+                settings,
+                "SMTP_FROM_NAME",
+                "Lawyered Up",
             )
+
+            from_email = getattr(
+                settings,
+                "SMTP_FROM_EMAIL",
+                "",
+            )
+
+            if not from_email:
+                raise ValueError(
+                    "SMTP From email is not configured."
+                )
+
+        else:
+
+            config = EmailService.get_provider_config(
+                provider
+            )
+
+            from_name = config["from_name"]
+            from_email = config["from_email"]
+
+            if not from_email:
+                raise ValueError(
+                    f"SMTP From email is not configured "
+                    f"for provider '{config['provider']}'."
+                )
 
         message = EmailMessage()
 
@@ -693,25 +813,15 @@ class EmailService:
 
         No database changes are performed here.
 
-        Important execution order:
+        Provider compatibility:
 
-            1. Validate recipient
-            2. Resolve provider
-            3. Apply dry-run protection
-            4. Apply live authorization protection
-            5. Check SMTP configuration
-            6. Establish SMTP connection
-            7. Build email message
-            8. Send email
-            9. Close SMTP connection
-
-        Building the message occurs after SMTP connection
-        creation so SMTP connection failures are surfaced
-        correctly and can be tested independently.
+        is_configured() and create_smtp_connection() are
+        intentionally called without arguments because the
+        existing LUIP tests monkeypatch these methods with
+        zero-argument callables.
         """
 
         if not email_queue.recipient_email:
-
             return {
                 "success": False,
                 "error": (
@@ -719,31 +829,24 @@ class EmailService:
                 ),
             }
 
-        provider = getattr(
+        requested_provider = getattr(
             email_queue,
             "smtp_provider",
             None,
         )
 
         try:
-
             provider = EmailService.normalize_provider(
-                provider
+                requested_provider
             )
 
         except ValueError as exc:
-
             return {
                 "success": False,
                 "error": str(exc),
             }
 
-        # -------------------------------------------------
-        # DRY RUN SAFETY
-        # -------------------------------------------------
-
         if EmailService.is_dry_run():
-
             return {
                 "success": True,
                 "dry_run": True,
@@ -754,12 +857,7 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # EXPLICIT LIVE AUTHORIZATION
-        # -------------------------------------------------
-
         if not EmailService.is_live_enabled():
-
             return {
                 "success": False,
                 "live_blocked": True,
@@ -772,12 +870,7 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # SMTP CONFIGURATION
-        # -------------------------------------------------
-
         if not EmailService.is_configured():
-
             return {
                 "success": False,
                 "provider": provider,
@@ -789,28 +882,15 @@ class EmailService:
         smtp = None
 
         try:
-
-            # ---------------------------------------------
-            # CONNECT FIRST
-            # ---------------------------------------------
-
             smtp = (
                 EmailService.create_smtp_connection()
             )
-
-            # ---------------------------------------------
-            # BUILD MESSAGE AFTER CONNECTION
-            # ---------------------------------------------
 
             message = (
                 EmailService.build_email_message(
                     email_queue
                 )
             )
-
-            # ---------------------------------------------
-            # TRANSMIT
-            # ---------------------------------------------
 
             smtp.send_message(
                 message
@@ -829,7 +909,6 @@ class EmailService:
             }
 
         except Exception as exc:
-
             return {
                 "success": False,
                 "provider": provider,
@@ -837,12 +916,9 @@ class EmailService:
             }
 
         finally:
-
             if smtp is not None:
-
                 try:
                     smtp.quit()
-
                 except Exception:
                     pass
 
@@ -956,7 +1032,6 @@ class EmailService:
             "Pending",
             "Failed",
         }:
-
             return {
                 "success": False,
                 "processed": False,
@@ -967,14 +1042,9 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # FUTURE SCHEDULE PROTECTION
-        # -------------------------------------------------
-
         if EmailService.is_scheduled_for_future(
             email_queue
         ):
-
             return {
                 "success": True,
                 "processed": False,
@@ -986,15 +1056,10 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # LIVE AUTHORIZATION PROTECTION
-        # -------------------------------------------------
-
         if (
             not EmailService.is_dry_run()
             and not EmailService.is_live_enabled()
         ):
-
             return {
                 "success": False,
                 "processed": False,
@@ -1004,10 +1069,6 @@ class EmailService:
                     "Live email transmission is disabled."
                 ),
             }
-
-        # -------------------------------------------------
-        # RETRY INITIALIZATION
-        # -------------------------------------------------
 
         if email_queue.retry_count is None:
             email_queue.retry_count = 0
@@ -1019,7 +1080,6 @@ class EmailService:
         )
 
         if email_queue.retry_count >= max_retries:
-
             return {
                 "success": False,
                 "processed": False,
@@ -1028,10 +1088,6 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # MARK PROCESSING
-        # -------------------------------------------------
-
         email_queue.status = "Processing"
 
         email_queue.updated_at = (
@@ -1039,25 +1095,16 @@ class EmailService:
         )
 
         db.commit()
-        db.refresh(email_queue)
 
-        # -------------------------------------------------
-        # SEND
-        # -------------------------------------------------
+        db.refresh(
+            email_queue
+        )
 
         result = EmailService.send_email(
             email_queue
         )
 
-        # -------------------------------------------------
-        # SUCCESS
-        # -------------------------------------------------
-
         if result.get("success"):
-
-            # ---------------------------------------------
-            # DRY RUN
-            # ---------------------------------------------
 
             if result.get("dry_run"):
 
@@ -1068,7 +1115,10 @@ class EmailService:
                 )
 
                 db.commit()
-                db.refresh(email_queue)
+
+                db.refresh(
+                    email_queue
+                )
 
                 return {
                     "success": True,
@@ -1082,10 +1132,6 @@ class EmailService:
                         "message"
                     ),
                 }
-
-            # ---------------------------------------------
-            # LIVE SEND SUCCESS
-            # ---------------------------------------------
 
             email_queue.status = "Sent"
 
@@ -1105,7 +1151,10 @@ class EmailService:
             )
 
             db.commit()
-            db.refresh(email_queue)
+
+            db.refresh(
+                email_queue
+            )
 
             return {
                 "success": True,
@@ -1128,10 +1177,6 @@ class EmailService:
                 ),
             }
 
-        # -------------------------------------------------
-        # FAILURE
-        # -------------------------------------------------
-
         email_queue.status = "Failed"
 
         email_queue.retry_count += 1
@@ -1151,7 +1196,10 @@ class EmailService:
         )
 
         db.commit()
-        db.refresh(email_queue)
+
+        db.refresh(
+            email_queue
+        )
 
         terminal_failure = (
             email_queue.retry_count
@@ -1188,10 +1236,29 @@ class EmailService:
         """
         Process pending email queue entries.
 
-        Live execution requires explicit authorization.
+        The caller-supplied limit controls the normal maximum
+        number of records selected.
 
-        In live mode, EMAIL_LIVE_MAX_BATCH provides an
-        independent safety ceiling.
+        When live email execution is authorized, the
+        EMAIL_LIVE_MAX_BATCH setting is a HARD SAFETY CEILING.
+
+        Therefore:
+
+            effective_limit =
+                min(caller_limit, EMAIL_LIVE_MAX_BATCH)
+
+        This ensures that a caller cannot accidentally bypass
+        the live-email safety ceiling by supplying a larger
+        processing limit.
+
+        Queue processing also:
+
+        - recovers stale Processing entries
+        - excludes future-scheduled entries
+        - prioritises Critical, High, Medium, then Normal
+        - respects the caller-supplied limit
+        - enforces EMAIL_LIVE_MAX_BATCH during live execution
+        - preserves retry handling
         """
 
         if limit is None or limit <= 0:
@@ -1201,11 +1268,15 @@ class EmailService:
         # GLOBAL LIVE AUTHORIZATION GATE
         # -------------------------------------------------
 
+        live_execution = (
+            not EmailService.is_dry_run()
+            and EmailService.is_live_enabled()
+        )
+
         if (
             not EmailService.is_dry_run()
             and not EmailService.is_live_enabled()
         ):
-
             return {
                 "success": False,
                 "version": EmailService.VERSION,
@@ -1227,34 +1298,20 @@ class EmailService:
             }
 
         # -------------------------------------------------
-        # LIVE EXECUTION SAFETY CEILING
+        # DETERMINE EFFECTIVE PROCESSING CEILING
         # -------------------------------------------------
 
-        if not EmailService.is_dry_run():
+        effective_limit = limit
 
-            live_max_batch = getattr(
-                settings,
-                "EMAIL_LIVE_MAX_BATCH",
-                1,
+        if live_execution:
+            live_max_batch = (
+                EmailService.get_live_max_batch()
             )
 
-            if (
-                live_max_batch is None
-                or live_max_batch <= 0
-            ):
-                live_max_batch = 1
-
-            limit = min(
+            effective_limit = min(
                 limit,
-                int(live_max_batch),
+                live_max_batch,
             )
-
-        priority_order = {
-            "Critical": 1,
-            "High": 2,
-            "Medium": 3,
-            "Normal": 4,
-        }
 
         # -------------------------------------------------
         # RECOVER STALE PROCESSING RECORDS
@@ -1319,6 +1376,13 @@ class EmailService:
         # PRIORITY ORDER
         # -------------------------------------------------
 
+        priority_order = {
+            "Critical": 1,
+            "High": 2,
+            "Medium": 3,
+            "Normal": 4,
+        }
+
         executable_entries.sort(
             key=lambda entry: (
                 priority_order.get(
@@ -1329,8 +1393,12 @@ class EmailService:
             )
         )
 
+        # -------------------------------------------------
+        # APPLY EFFECTIVE SAFETY LIMIT
+        # -------------------------------------------------
+
         queue_entries = executable_entries[
-            :limit
+            :effective_limit
         ]
 
         results = []
@@ -1348,7 +1416,9 @@ class EmailService:
                 )
             )
 
-            results.append(result)
+            results.append(
+                result
+            )
 
         # -------------------------------------------------
         # RESULT COUNTS

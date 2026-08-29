@@ -1,10 +1,12 @@
-﻿import pytest
+import pytest
 
 from email.message import EmailMessage
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+
+from app.config import settings
 
 from app.db.base import Base
 
@@ -15,6 +17,8 @@ from app.models.outreach_campaign import OutreachCampaign
 from app.models.email_queue import EmailQueue
 
 from app.services.email_service import EmailService
+
+
 # =========================================================
 # LIVE EMAIL TEST AUTHORIZATION
 # =========================================================
@@ -24,6 +28,10 @@ from app.services.email_service import EmailService
 # verifies that the production safety gate blocks live email
 # unless explicitly authorized.
 #
+# These tests NEVER connect to a real SMTP server.
+# SMTP execution is monkeypatched where required.
+#
+# =========================================================
 
 @pytest.fixture(autouse=True)
 def authorize_live_email_tests(monkeypatch):
@@ -35,9 +43,6 @@ def authorize_live_email_tests(monkeypatch):
             lambda: True
         ),
     )
-
-
-from app.config import settings
 
 
 # =========================================================
@@ -86,9 +91,11 @@ def db():
     session = TestingSessionLocal()
 
     try:
+
         yield session
 
     finally:
+
         session.rollback()
         session.close()
 
@@ -98,7 +105,9 @@ def db():
 # =========================================================
 
 @pytest.fixture
-def company(db):
+def company(
+    db,
+):
 
     company = Company(
         name="LUIP Email Service Test Company",
@@ -110,8 +119,12 @@ def company(db):
     )
 
     db.add(company)
+
     db.commit()
-    db.refresh(company)
+
+    db.refresh(
+        company
+    )
 
     return company
 
@@ -138,9 +151,15 @@ def decision_maker(
         verified=True,
     )
 
-    db.add(decision_maker)
+    db.add(
+        decision_maker
+    )
+
     db.commit()
-    db.refresh(decision_maker)
+
+    db.refresh(
+        decision_maker
+    )
 
     return decision_maker
 
@@ -166,7 +185,9 @@ def nba(
     )
 
     db.add(nba)
+
     db.commit()
+
     db.refresh(nba)
 
     return nba
@@ -194,7 +215,9 @@ def campaign(
     )
 
     db.add(campaign)
+
     db.commit()
+
     db.refresh(campaign)
 
     return campaign
@@ -227,7 +250,9 @@ def email_queue(
     )
 
     db.add(queue)
+
     db.commit()
+
     db.refresh(queue)
 
     return queue
@@ -239,7 +264,7 @@ def email_queue(
 
 def test_email_service_version():
 
-    assert EmailService.VERSION == "1.0.0"
+    assert EmailService.VERSION == "1.1.0"
 
 
 # =========================================================
@@ -511,6 +536,14 @@ def test_send_email_smtp_not_configured(
         ),
     )
 
+    monkeypatch.setattr(
+        EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
+        ),
+    )
+
     result = (
         EmailService.send_email(
             email_queue
@@ -567,6 +600,14 @@ def test_send_email_live_success(
         "is_dry_run",
         staticmethod(
             lambda: False
+        ),
+    )
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
         ),
     )
 
@@ -658,6 +699,14 @@ def test_send_email_smtp_failure(
         "is_dry_run",
         staticmethod(
             lambda: False
+        ),
+    )
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
         ),
     )
 
@@ -766,6 +815,14 @@ def test_process_queue_entry_live_success(
 
     monkeypatch.setattr(
         EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
+        ),
+    )
+
+    monkeypatch.setattr(
+        EmailService,
         "send_email",
         staticmethod(
             lambda queue: {
@@ -829,6 +886,14 @@ def test_process_queue_entry_failure(
         "is_dry_run",
         staticmethod(
             lambda: False
+        ),
+    )
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_live_enabled",
+        staticmethod(
+            lambda: True
         ),
     )
 
@@ -984,7 +1049,7 @@ def test_process_pending_queue_dry_run(
 
     assert (
         result["version"]
-        == "1.0.0"
+        == "1.1.0"
     )
 
     assert result["dry_run"] is True
@@ -1010,7 +1075,16 @@ def test_process_pending_queue_respects_limit(
     db,
     company,
     decision_maker,
+    monkeypatch,
 ):
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_dry_run",
+        staticmethod(
+            lambda: True
+        ),
+    )
 
     campaigns = []
 
@@ -1090,6 +1164,14 @@ def test_process_pending_queue_prioritises_critical(
     decision_maker,
     monkeypatch,
 ):
+
+    monkeypatch.setattr(
+        EmailService,
+        "is_dry_run",
+        staticmethod(
+            lambda: True
+        ),
+    )
 
     campaigns = []
 
