@@ -813,12 +813,14 @@ class EmailService:
 
         No database changes are performed here.
 
-        Provider compatibility:
+        Provider routing:
 
-        is_configured() and create_smtp_connection() are
-        intentionally called without arguments because the
-        existing LUIP tests monkeypatch these methods with
-        zero-argument callables.
+        - "default", missing, or blank smtp_provider uses
+          the legacy zero-argument SMTP path.
+
+        - Explicit provider values such as "gmail",
+          "outlook", or "zoho" are passed to both SMTP
+          configuration validation and SMTP connection.
         """
 
         if not email_queue.recipient_email:
@@ -833,6 +835,17 @@ class EmailService:
             email_queue,
             "smtp_provider",
             None,
+        )
+
+        explicit_provider = (
+            requested_provider is not None
+            and str(
+                requested_provider
+            ).strip().lower()
+            not in {
+                "",
+                "default",
+            }
         )
 
         try:
@@ -870,21 +883,45 @@ class EmailService:
                 ),
             }
 
-        if not EmailService.is_configured():
-            return {
-                "success": False,
-                "provider": provider,
-                "error": (
-                    "SMTP is not configured."
-                ),
-            }
+        if explicit_provider:
+
+            if not EmailService.is_configured(
+                provider
+            ):
+                return {
+                    "success": False,
+                    "provider": provider,
+                    "error": (
+                        "SMTP is not configured."
+                    ),
+                }
+
+        else:
+
+            if not EmailService.is_configured():
+                return {
+                    "success": False,
+                    "provider": provider,
+                    "error": (
+                        "SMTP is not configured."
+                    ),
+                }
 
         smtp = None
 
         try:
-            smtp = (
-                EmailService.create_smtp_connection()
-            )
+
+            if explicit_provider:
+                smtp = (
+                    EmailService.create_smtp_connection(
+                        provider
+                    )
+                )
+
+            else:
+                smtp = (
+                    EmailService.create_smtp_connection()
+                )
 
             message = (
                 EmailService.build_email_message(
