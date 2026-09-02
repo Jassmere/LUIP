@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+.pytest_cache/
+.idea/
+.vscode/
+luip.db
+__pycache__/
+*.pyc
+.env
+
+storage/
+# LUIP local backup files
+*.backup-*
+*.bundle
+
+
+LUIP-v1.3-*.zip

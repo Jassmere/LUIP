@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: luip-api
+
+    ports:
+      - "8000:8000"
+
+    env_file:
+      - .env
+
+    depends_on:
+      - db
+
+    volumes:
+      - .:/app
+      - ./storage:/app/storage
+
+  db:
+    image: postgres:16
+
+    container_name: luip-db
+
+    restart: always
+
+    environment:
+      POSTGRES_USER: luip_user
+      POSTGRES_PASSWORD: luip_password
+      POSTGRES_DB: luip
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
