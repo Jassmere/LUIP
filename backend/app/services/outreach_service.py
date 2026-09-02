@@ -2,6 +2,7 @@ from datetime import datetime, UTC
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.company import Company
 from app.models.decision_maker import DecisionMaker
 from app.models.next_best_action import NextBestAction
@@ -458,6 +459,7 @@ class OutreachService:
             company_id=company.id,
             decision_maker_id=decision_maker.id,
             campaign_id=campaign.id,
+            smtp_provider=settings.SMTP_DEFAULT_PROVIDER,
             recipient_email=decision_maker.email,
             recipient_name=decision_maker.full_name,
             subject=subject,
