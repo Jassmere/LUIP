@@ -3,15 +3,6 @@ from app.config import settings
 # ---------------------------------------------------------
 # Model registration
 # ---------------------------------------------------------
-#
-# The FastAPI application imports app.database during
-# normal startup, which registers the complete SQLAlchemy
-# model set.
-#
-# The outreach scheduler can also be executed directly,
-# however. In that case we must explicitly load the complete
-# model registry before SQLAlchemy initializes relationships.
-# ---------------------------------------------------------
 
 from app.models.user import User
 from app.models.organization import Organization
@@ -29,49 +20,43 @@ from app.models.email_queue import EmailQueue
 from app.models.outreach_campaign import OutreachCampaign
 
 from app.db.session import SessionLocal
-from app.services.email_service import EmailService
 
 
 def run_outreach():
     """
-    Execute the LUIP outreach queue.
+    Execute LUIP outreach preparation only.
 
-    The scheduler processes prepared EmailQueue records.
+    Automatic email transmission is deliberately disabled.
 
-    Safety:
+    Pilot flow:
 
-        EMAIL_DRY_RUN=True
+        Intelligence
+            ->
+        Buying Intent Classification
+            ->
+        Next Best Action
+            ->
+        Outreach Generation
+            ->
+        Email Queue
+            ->
+        Manual Review / Approval
+            ->
+        Manual Send
 
-    prevents actual email transmission.
-
-    Live execution:
-
-        EMAIL_DRY_RUN=False
-
-    enables SMTP transmission, provided valid SMTP
-    configuration is available.
-
-    The complete SQLAlchemy model registry is loaded before
-    the database session is created so that all relationship()
-    targets can be resolved during standalone scheduler
-    execution.
+    This scheduler does NOT call:
+        EmailService.process_pending_queue()
+        EmailService.send_email()
     """
 
     print("")
     print("======================================")
-    print("LUIP Outreach Execution Engine")
+    print("LUIP Outreach Preparation Scheduler")
     print("======================================")
     print("")
 
-    print(
-        f"Email dry-run mode: "
-        f"{EmailService.is_dry_run()}"
-    )
-
-    print(
-        f"SMTP configured: "
-        f"{EmailService.is_configured()}"
-    )
+    print("Automatic email transmission: DISABLED")
+    print("Manual send required: ENABLED")
 
     print(
         f"Email batch size: "
@@ -81,40 +66,65 @@ def run_outreach():
     db = SessionLocal()
 
     try:
-
-        result = (
-            EmailService.process_pending_queue(
-                db=db,
-                limit=getattr(
-                    settings,
-                    "EMAIL_BATCH_SIZE",
-                    10,
-                ),
+        pending_count = (
+            db.query(EmailQueue)
+            .filter(
+                EmailQueue.status == "Pending"
             )
+            .count()
+        )
+
+        draft_campaign_count = (
+            db.query(OutreachCampaign)
+            .filter(
+                OutreachCampaign.status == "Draft"
+            )
+            .count()
         )
 
         print("")
-        print("Outreach execution result:")
+        print("Outreach preparation status:")
 
         print(
-            f"Processed: "
-            f"{result.get('processed', 0)}"
+            f"Pending email queue entries: "
+            f"{pending_count}"
         )
 
         print(
-            f"Sent: "
-            f"{result.get('sent', 0)}"
+            f"Draft outreach campaigns: "
+            f"{draft_campaign_count}"
+        )
+
+        print("")
+        print("No email transmission was attempted.")
+
+        result = {
+            "success": True,
+            "automatic_send": False,
+            "manual_send_required": True,
+            "processed": 0,
+            "sent": 0,
+            "failed": 0,
+            "dry_run_count": 0,
+            "pending_count": pending_count,
+            "draft_campaign_count": draft_campaign_count,
+        }
+
+        print("")
+        print("Outreach preparation result:")
+
+        print(
+            f"Pending: "
+            f"{pending_count}"
         )
 
         print(
-            f"Failed: "
-            f"{result.get('failed', 0)}"
+            f"Draft campaigns: "
+            f"{draft_campaign_count}"
         )
 
-        print(
-            f"Dry-run: "
-            f"{result.get('dry_run_count', 0)}"
-        )
+        print("Sent automatically: 0")
+        print("Manual approval/send required: YES")
 
         print("")
 
@@ -123,20 +133,20 @@ def run_outreach():
     except Exception as exc:
 
         print("")
-        print(
-            "Outreach execution failed:"
-        )
-
+        print("Outreach preparation failed:")
         print(str(exc))
-
         print("")
 
         return {
             "success": False,
+            "automatic_send": False,
+            "manual_send_required": True,
             "processed": 0,
             "sent": 0,
             "failed": 0,
             "dry_run_count": 0,
+            "pending_count": 0,
+            "draft_campaign_count": 0,
             "error": str(exc),
         }
 
@@ -149,7 +159,11 @@ def run_outreach():
         )
 
         print(
-            "Outreach execution completed."
+            "Outreach preparation completed."
+        )
+
+        print(
+            "Automatic transmission: DISABLED."
         )
 
         print(
@@ -157,3 +171,7 @@ def run_outreach():
         )
 
         print("")
+
+
+if __name__ == "__main__":
+    run_outreach()
