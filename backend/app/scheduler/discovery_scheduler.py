@@ -1,9 +1,9 @@
-"""
+﻿"""
 LUIP Discovery Scheduler
 
 Runs the LUIP Discovery Engine against active companies.
 
-Version: 1.0.0
+Version: 1.1.0
 """
 
 from datetime import datetime, UTC
@@ -13,12 +13,16 @@ from app.models.company import Company
 from app.discovery.discovery_engine import DiscoveryEngine
 
 
-def run_discovery(limit=None):
+PILOT_SOURCE = "LUIP-200-company-pilot-enrichment-v1-20260910.xlsx"
+
+
+def run_discovery(limit=None, pilot_only=False):
     """
     Run the Discovery Engine for active companies.
 
     Args:
         limit: Optional maximum number of companies to scan.
+        pilot_only: When True, scan only the 200-company LUIP pilot.
 
     Returns:
         Structured summary of the discovery run.
@@ -44,13 +48,30 @@ def run_discovery(limit=None):
         query = (
             db.query(Company)
             .filter(Company.active.is_(True))
-            .order_by(Company.id.asc())
         )
+
+        if pilot_only:
+            query = query.filter(
+                Company.discovered_from == PILOT_SOURCE
+            )
+
+        query = query.order_by(Company.id.asc())
 
         if limit is not None:
             query = query.limit(limit)
 
         companies = query.all()
+
+        selection_label = (
+            "200-company pilot"
+            if pilot_only
+            else "all active companies"
+        )
+
+        print(
+            f"[{datetime.now(UTC)}] "
+            f"Discovery scope: {selection_label}"
+        )
 
         print(
             f"[{datetime.now(UTC)}] "
@@ -119,6 +140,7 @@ def run_discovery(limit=None):
             "scanned": scanned,
             "completed": completed,
             "failed": failed,
+            "pilot_only": pilot_only,
             "results": results,
         }
 
@@ -126,6 +148,7 @@ def run_discovery(limit=None):
         print("======================================")
         print("LUIP Discovery Run Complete")
         print("======================================")
+        print(f"Scope    : {selection_label}")
         print(f"Selected : {len(companies)}")
         print(f"Scanned  : {scanned}")
         print(f"Completed: {completed}")
